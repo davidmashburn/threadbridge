@@ -1,0 +1,16 @@
+{
+  "name": "threadbridge",
+  "version": "0.1.0",
+  "description": "Thread interconversion toolkit for AI harnesses",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "threadbridge": "./bin/threadbridge.js"
+  },
+  "scripts": {
+    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
