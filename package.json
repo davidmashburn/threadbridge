@@ -8,7 +8,7 @@
     "threadbridge": "./bin/threadbridge.js"
   },
   "scripts": {
-    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js"
+    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js && node --check ./src/codex.js && node --check ./src/bridge.js"
   },
   "engines": {
     "node": ">=22"
