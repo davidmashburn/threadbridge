@@ -506,5 +506,6 @@ module.exports = {
   DEFAULT_BUSY_TIMEOUT_MS,
   DEFAULT_LOCK_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
+  resolveThreadTarget,
   copyThreadBetweenT3Dbs,
 };
