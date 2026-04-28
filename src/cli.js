@@ -38,6 +38,14 @@ const {
   generateCursorSessionFromT3,
   importCursorIntoT3,
 } = require("./cursor");
+const {
+  DEFAULT_OPENCODE_ROOT,
+  listOpenCodeSessions,
+  resolveOpenCodeSessionTarget,
+  parseOpenCodeSession,
+  copyOpenCodeSession,
+  generateOpenCodeSessionFromT3,
+} = require("./opencode");
 
 const DEFAULT_T3_DB_PATH = path.join(os.homedir(), ".t3", "userdata", "state.sqlite");
 const DEFAULT_T3_SOURCE_DB_PATH = path.join(os.homedir(), ".t3", "dev", "state.sqlite");
@@ -50,6 +58,7 @@ function usage() {
   threadbridge t3 to-codex [THREAD_ID|last] [--db-path PATH] [--root DIR] [--new-session-id ID]
   threadbridge t3 to-claude [THREAD_ID|last] [--db-path PATH] [--project-path DIR]
   threadbridge t3 to-cursor [THREAD_ID|last] [--db-path PATH]
+  threadbridge t3 to-opencode [THREAD_ID|last] [--db-path PATH]
 
   threadbridge codex list [--root DIR] [--limit N] [--include-boilerplate]
   threadbridge codex copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
@@ -59,9 +68,14 @@ function usage() {
   threadbridge claude copy [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--dest-project-path DIR] [--new-session-id ID]
   threadbridge claude to-t3 [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
-  threadbridge cursor list
+  threadbridge cursor list [--limit N]
   threadbridge cursor copy [CHAT_ID|last] [--dest-chat-id ID]
-  threadbridge cursor to-t3 [CHAT_ID|last] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+  threadbridge cursor to-t3 [CHAT_ID|COMPOSER_ID|last] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+  (cursor list shows both ACP sessions [acp] and Composer threads [composer])
+
+  threadbridge opencode list [--root DIR] [--limit N]
+  threadbridge opencode copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
+  threadbridge opencode to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
 Defaults:
   --source-db-path ${DEFAULT_T3_SOURCE_DB_PATH}
@@ -94,8 +108,8 @@ function parseArgs(argv) {
   }
 
   const [adapter, command, ...rest] = argv;
-  if (!["t3", "codex", "claude", "cursor"].includes(adapter)) {
-    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex, claude, cursor`);
+  if (!["t3", "codex", "claude", "cursor", "opencode"].includes(adapter)) {
+    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex, claude, cursor, opencode`);
   }
 
   const args = {
@@ -108,10 +122,13 @@ function parseArgs(argv) {
     destRoot: DEFAULT_CODEX_ROOT,
     projectPath: DEFAULT_CLAUDE_ROOT,
     destProjectPath: DEFAULT_CLAUDE_ROOT,
+    opencodeRoot: DEFAULT_OPENCODE_ROOT,
+    destOpenCodeRoot: DEFAULT_OPENCODE_ROOT,
     limit: DEFAULT_LIST_LIMIT,
     newThreadId: null,
     newSessionId: null,
     newChatId: null,
+    newOpenCodeSessionId: null,
     title: null,
     workspaceRoot: null,
     projectId: null,
@@ -149,12 +166,15 @@ function parseArgs(argv) {
       token === "--new-thread-id" ||
       token === "--new-session-id" ||
       token === "--new-chat-id" ||
+      token === "--new-opencode-session-id" ||
       token === "--title" ||
       token === "--workspace-root" ||
       token === "--project-id" ||
       token === "--busy-timeout-ms" ||
       token === "--lock-retries" ||
-      token === "--retry-delay-ms"
+      token === "--retry-delay-ms" ||
+      token === "--opencode-root" ||
+      token === "--dest-opencode-root"
     ) {
       const next = rest[i + 1];
       if (!next) fail(`Missing value for ${token}`);
@@ -171,20 +191,24 @@ function parseArgs(argv) {
       else if (token === "--project-id") args.projectId = next;
       else if (token === "--busy-timeout-ms") args.busyTimeoutMs = parsePositiveInt(token, next);
       else if (token === "--lock-retries") args.lockRetries = parsePositiveInt(token, next);
-else if (token === "--retry-delay-ms") args.retryDelayMs = parsePositiveInt(token, next);
-    else if (token === "--project-path") args.projectPath = next;
-    else if (token === "--dest-project-path") args.destProjectPath = next;
-    else if (token === "--new-chat-id") args.newChatId = next;
-    continue;
+      else if (token === "--retry-delay-ms") args.retryDelayMs = parsePositiveInt(token, next);
+      else if (token === "--project-path") args.projectPath = next;
+      else if (token === "--dest-project-path") args.destProjectPath = next;
+      else if (token === "--new-chat-id") args.newChatId = next;
+      else if (token === "--opencode-root") args.opencodeRoot = next;
+      else if (token === "--dest-opencode-root") args.destOpenCodeRoot = next;
+      else if (token === "--new-opencode-session-id") args.newOpenCodeSessionId = next;
+      continue;
     }
     if (token.startsWith("--")) fail(`Unknown option: ${token}`);
     positionals.push(token);
   }
 
-  const validT3 = ["list", "copy", "to-codex", "to-claude", "to-cursor"];
+  const validT3 = ["list", "copy", "to-codex", "to-claude", "to-cursor", "to-opencode"];
   const validCodex = ["list", "copy", "to-t3"];
   const validClaude = ["list", "copy", "to-t3"];
   const validCursor = ["list", "copy", "to-t3"];
+  const validOpenCode = ["list", "copy", "to-t3"];
   if (adapter === "t3" && !validT3.includes(command)) {
     fail(`Unsupported t3 command '${command}'.`);
   }
@@ -196,6 +220,9 @@ else if (token === "--retry-delay-ms") args.retryDelayMs = parsePositiveInt(toke
   }
   if (adapter === "cursor" && !validCursor.includes(command)) {
     fail(`Unsupported cursor command '${command}'.`);
+  }
+  if (adapter === "opencode" && !validOpenCode.includes(command)) {
+    fail(`Unsupported opencode command '${command}'.`);
   }
 
   if (command !== "list") {
@@ -263,13 +290,31 @@ function runClaudeList({ projectPath, limit }) {
   }
 }
 
-function runCursorList({}) {
-  const chats = listCursorChats();
+function runCursorList({ limit }) {
+  const chats = listCursorChats({ limit });
   for (const chat of chats) {
-    process.stdout.write(`${chat.createdAt || "unknown"}  ${chat.chatId}\n`);
+    const source = chat.source || "acp";
+    const ts = (chat.lastAt || chat.createdAt) || "unknown";
+    process.stdout.write(`${ts}  ${chat.chatId}  [${source}]\n`);
     process.stdout.write(`  title: ${chat.title}\n`);
-    process.stdout.write(`  messages: ${chat.messageCount}\n`);
-    process.stdout.write(`  dir: ${chat.chatDir}\n\n`);
+    if (source === "composer") {
+      process.stdout.write(`  turns: ${chat.userCount} user / ${chat.aiCount} ai  (${chat.messageCount} substantive)\n`);
+    } else {
+      process.stdout.write(`  messages: ${chat.messageCount}\n`);
+      if (chat.chatDir) process.stdout.write(`  dir: ${chat.chatDir}\n`);
+    }
+    process.stdout.write("\n");
+  }
+}
+
+function runOpenCodeList({ opencodeRoot, limit }) {
+  const sessions = listOpenCodeSessions({ root: opencodeRoot, limit });
+  for (const session of sessions) {
+    process.stdout.write(`${session.createdAt || "unknown"}  ${session.sessionId}\n`);
+    if (session.directory) process.stdout.write(`  cwd: ${session.directory}\n`);
+    process.stdout.write(`  title: ${session.title}\n`);
+    process.stdout.write(`  slug: ${session.slug}\n`);
+    process.stdout.write(`  file: ${session.filePath}\n\n`);
   }
 }
 
@@ -418,6 +463,24 @@ function runCli(argv) {
       return;
     }
 
+    if (args.adapter === "t3" && args.command === "to-opencode") {
+      const sourceThreadId = resolveThreadTarget({
+        sourceDbPath: args.dbPath,
+        target: args.target,
+      });
+
+      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
+      const result = generateOpenCodeSessionFromT3({
+        t3Thread: t3Export,
+        targetRoot: args.opencodeRoot,
+      });
+      process.stdout.write(`Exported T3 thread to OpenCode session.\n`);
+      process.stdout.write(`Session ID: ${result.sessionId}\n`);
+      process.stdout.write(`Session path: ${result.sessionPath}\n`);
+      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      return;
+    }
+
     if (args.adapter === "claude" && args.command === "list") {
       runClaudeList(args);
       return;
@@ -490,7 +553,63 @@ function runCli(argv) {
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
       });
-      process.stdout.write(`Imported Cursor chat ${chat.chatId} into T3.\n`);
+      const sourceLabel = chat.source === "composer" ? "Cursor Composer thread" : "Cursor ACP chat";
+      process.stdout.write(`Imported ${sourceLabel} ${chat.chatId} into T3.\n`);
+      process.stdout.write(`Thread ID: ${result.threadId}\n`);
+      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
+      process.stdout.write(`Database: ${result.dbPath}\n`);
+      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
+      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      return;
+    }
+
+    if (args.adapter === "opencode" && args.command === "list") {
+      runOpenCodeList(args);
+      return;
+    }
+
+    if (args.adapter === "opencode" && args.command === "copy") {
+      const result = copyOpenCodeSession({
+        sourceRoot: args.opencodeRoot,
+        targetRoot: args.destOpenCodeRoot,
+        target: args.target,
+        newSessionId: args.newOpenCodeSessionId,
+      });
+      process.stdout.write(
+        `Copied OpenCode session ${result.sourceSessionId} -> ${result.sessionId}\n`,
+      );
+      process.stdout.write(`Source file: ${result.sourceFile}\n`);
+      process.stdout.write(`Target file: ${result.targetFile}\n`);
+      return;
+    }
+
+    if (args.adapter === "opencode" && args.command === "to-t3") {
+      const sourceFile = resolveOpenCodeSessionTarget({
+        root: args.opencodeRoot,
+        target: args.target,
+      });
+      const opencodeSession = parseOpenCodeSession(sourceFile);
+      const result = importCodexIntoT3({
+        codexSession: {
+          sessionId: opencodeSession.sessionId,
+          transcript: opencodeSession.transcript,
+          model: opencodeSession.model || "kimi-k2.5-free",
+          originalCwd: opencodeSession.originalCwd,
+          reasoningEffort: null,
+          interactionMode: "default",
+          runtimeMode: "approval-required",
+        },
+        dbPath: args.dbPath,
+        title: args.title,
+        projectId: args.projectId,
+        workspaceRoot: args.workspaceRoot,
+        backup: args.backup,
+        busyTimeoutMs: args.busyTimeoutMs,
+        lockRetries: args.lockRetries,
+        retryDelayMs: args.retryDelayMs,
+      });
+      process.stdout.write(`Imported OpenCode session ${opencodeSession.sessionId} into T3.\n`);
       process.stdout.write(`Thread ID: ${result.threadId}\n`);
       process.stdout.write(`Thread title: ${result.threadTitle}\n`);
       process.stdout.write(`Database: ${result.dbPath}\n`);
