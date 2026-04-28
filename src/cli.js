@@ -3,6 +3,7 @@ const os = require("os");
 const { DatabaseSync } = require("node:sqlite");
 const {
   copyThreadBetweenT3Dbs,
+  resolveThreadTarget,
   DEFAULT_BUSY_TIMEOUT_MS,
   DEFAULT_LOCK_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
@@ -19,6 +20,24 @@ const {
   buildT3Export,
   generateCodexSessionFromT3,
 } = require("./bridge");
+const {
+  DEFAULT_CLAUDE_ROOT,
+  listClaudeSessions,
+  resolveClaudeSession,
+  parseClaudeSession,
+  parseClaudeSessionWithContext,
+  copyClaudeSession,
+  exportT3ToClaudeFormat,
+} = require("./claude");
+const {
+  DEFAULT_CURSOR_ROOT,
+  listCursorChats,
+  resolveCursorChat,
+  parseCursorChat,
+  buildCursorExport,
+  generateCursorSessionFromT3,
+  importCursorIntoT3,
+} = require("./cursor");
 
 const DEFAULT_T3_DB_PATH = path.join(os.homedir(), ".t3", "userdata", "state.sqlite");
 const DEFAULT_T3_SOURCE_DB_PATH = path.join(os.homedir(), ".t3", "dev", "state.sqlite");
@@ -29,15 +48,26 @@ function usage() {
   threadbridge t3 list [--db-path PATH] [--limit N]
   threadbridge t3 copy [THREAD_ID|last] [--source-db-path PATH] [--db-path PATH] [--new-thread-id ID] [--title TEXT] [--copy-runtime] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   threadbridge t3 to-codex [THREAD_ID|last] [--db-path PATH] [--root DIR] [--new-session-id ID]
+  threadbridge t3 to-claude [THREAD_ID|last] [--db-path PATH] [--project-path DIR]
+  threadbridge t3 to-cursor [THREAD_ID|last] [--db-path PATH]
 
   threadbridge codex list [--root DIR] [--limit N] [--include-boilerplate]
   threadbridge codex copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge codex to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
+  threadbridge claude list [PROJECT_PATH] [--limit N]
+  threadbridge claude copy [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--dest-project-path DIR] [--new-session-id ID]
+  threadbridge claude to-t3 [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+
+  threadbridge cursor list
+  threadbridge cursor copy [CHAT_ID|last] [--dest-chat-id ID]
+  threadbridge cursor to-t3 [CHAT_ID|last] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+
 Defaults:
   --source-db-path ${DEFAULT_T3_SOURCE_DB_PATH}
   --db-path        ${DEFAULT_T3_DB_PATH}
   --root           ${DEFAULT_CODEX_ROOT}
+  --project-path  ${DEFAULT_CLAUDE_ROOT}
   --busy-timeout-ms ${DEFAULT_BUSY_TIMEOUT_MS}
   --lock-retries    ${DEFAULT_LOCK_RETRIES}
   --retry-delay-ms  ${DEFAULT_RETRY_DELAY_MS}
@@ -64,8 +94,8 @@ function parseArgs(argv) {
   }
 
   const [adapter, command, ...rest] = argv;
-  if (!["t3", "codex"].includes(adapter)) {
-    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex`);
+  if (!["t3", "codex", "claude", "cursor"].includes(adapter)) {
+    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex, claude, cursor`);
   }
 
   const args = {
@@ -76,9 +106,12 @@ function parseArgs(argv) {
     sourceDbPath: DEFAULT_T3_SOURCE_DB_PATH,
     root: DEFAULT_CODEX_ROOT,
     destRoot: DEFAULT_CODEX_ROOT,
+    projectPath: DEFAULT_CLAUDE_ROOT,
+    destProjectPath: DEFAULT_CLAUDE_ROOT,
     limit: DEFAULT_LIST_LIMIT,
     newThreadId: null,
     newSessionId: null,
+    newChatId: null,
     title: null,
     workspaceRoot: null,
     projectId: null,
@@ -110,9 +143,12 @@ function parseArgs(argv) {
       token === "--source-db-path" ||
       token === "--root" ||
       token === "--dest-root" ||
+      token === "--project-path" ||
+      token === "--dest-project-path" ||
       token === "--limit" ||
       token === "--new-thread-id" ||
       token === "--new-session-id" ||
+      token === "--new-chat-id" ||
       token === "--title" ||
       token === "--workspace-root" ||
       token === "--project-id" ||
@@ -135,20 +171,31 @@ function parseArgs(argv) {
       else if (token === "--project-id") args.projectId = next;
       else if (token === "--busy-timeout-ms") args.busyTimeoutMs = parsePositiveInt(token, next);
       else if (token === "--lock-retries") args.lockRetries = parsePositiveInt(token, next);
-      else if (token === "--retry-delay-ms") args.retryDelayMs = parsePositiveInt(token, next);
-      continue;
+else if (token === "--retry-delay-ms") args.retryDelayMs = parsePositiveInt(token, next);
+    else if (token === "--project-path") args.projectPath = next;
+    else if (token === "--dest-project-path") args.destProjectPath = next;
+    else if (token === "--new-chat-id") args.newChatId = next;
+    continue;
     }
     if (token.startsWith("--")) fail(`Unknown option: ${token}`);
     positionals.push(token);
   }
 
-  const validT3 = ["list", "copy", "to-codex"];
+  const validT3 = ["list", "copy", "to-codex", "to-claude", "to-cursor"];
   const validCodex = ["list", "copy", "to-t3"];
+  const validClaude = ["list", "copy", "to-t3"];
+  const validCursor = ["list", "copy", "to-t3"];
   if (adapter === "t3" && !validT3.includes(command)) {
     fail(`Unsupported t3 command '${command}'.`);
   }
   if (adapter === "codex" && !validCodex.includes(command)) {
     fail(`Unsupported codex command '${command}'.`);
+  }
+  if (adapter === "claude" && !validClaude.includes(command)) {
+    fail(`Unsupported claude command '${command}'.`);
+  }
+  if (adapter === "cursor" && !validCursor.includes(command)) {
+    fail(`Unsupported cursor command '${command}'.`);
   }
 
   if (command !== "list") {
@@ -206,6 +253,26 @@ function runCodexList({ root, limit, includeBoilerplate }) {
   }
 }
 
+function runClaudeList({ projectPath, limit }) {
+  const sessions = listClaudeSessions(projectPath || process.cwd(), { limit });
+  for (const session of sessions) {
+    process.stdout.write(`${session.startedAt}  ${session.id}\n`);
+    if (session.workingDir) process.stdout.write(`  cwd: ${session.workingDir}\n`);
+    process.stdout.write(`  prompt: ${session.prompt}\n`);
+    process.stdout.write(`  file: ${session.filePath}\n\n`);
+  }
+}
+
+function runCursorList({}) {
+  const chats = listCursorChats();
+  for (const chat of chats) {
+    process.stdout.write(`${chat.createdAt || "unknown"}  ${chat.chatId}\n`);
+    process.stdout.write(`  title: ${chat.title}\n`);
+    process.stdout.write(`  messages: ${chat.messageCount}\n`);
+    process.stdout.write(`  dir: ${chat.chatDir}\n\n`);
+  }
+}
+
 function runCli(argv) {
   try {
     const args = parseArgs(argv);
@@ -216,6 +283,14 @@ function runCli(argv) {
     }
     if (args.adapter === "codex" && args.command === "list") {
       runCodexList(args);
+      return;
+    }
+    if (args.adapter === "claude" && args.command === "list") {
+      runClaudeList(args);
+      return;
+    }
+    if (args.adapter === "cursor" && args.command === "list") {
+      runCursorList(args);
       return;
     }
 
@@ -288,32 +363,10 @@ function runCli(argv) {
     }
 
     if (args.adapter === "t3" && args.command === "to-codex") {
-      const sourceThreadId = (() => {
-        const db = new DatabaseSync(args.dbPath);
-        try {
-          const rows = db
-            .prepare(`
-              SELECT thread_id AS threadId, title
-              FROM projection_threads
-              WHERE deleted_at IS NULL
-              ORDER BY created_at DESC, thread_id DESC
-            `)
-            .all();
-          if (!rows.length) throw new Error("No T3 threads found.");
-          if (args.target === "last") return rows[0].threadId;
-          const exact = rows.find((row) => row.threadId === args.target);
-          if (exact) return exact.threadId;
-          const partial = rows.filter(
-            (row) =>
-              row.threadId.includes(args.target) ||
-              row.title.toLowerCase().includes(String(args.target).toLowerCase()),
-          );
-          if (partial.length === 1) return partial[0].threadId;
-          throw new Error(`Could not uniquely resolve T3 thread target: ${args.target}`);
-        } finally {
-          db.close();
-        }
-      })();
+      const sourceThreadId = resolveThreadTarget({
+        sourceDbPath: args.dbPath,
+        target: args.target,
+      });
 
       const t3Export = buildT3Export(sourceThreadId, args.dbPath);
       const result = generateCodexSessionFromT3({
@@ -325,6 +378,125 @@ function runCli(argv) {
       process.stdout.write(`Session ID: ${result.sessionId}\n`);
       process.stdout.write(`Output file: ${result.outputPath}\n`);
       process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      return;
+    }
+
+    if (args.adapter === "t3" && args.command === "to-claude") {
+      const sourceThreadId = resolveThreadTarget({
+        sourceDbPath: args.dbPath,
+        target: args.target,
+      });
+
+      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
+      const result = exportT3ToClaudeFormat({
+        t3Thread: t3Export,
+        targetRoot: args.projectPath,
+        projectPath: args.projectPath,
+      });
+      process.stdout.write(`Exported T3 thread to Claude session.\n`);
+      process.stdout.write(`Session ID: ${result.sessionId}\n`);
+      process.stdout.write(`Output file: ${result.outputPath}\n`);
+      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      return;
+    }
+
+    if (args.adapter === "t3" && args.command === "to-cursor") {
+      const sourceThreadId = resolveThreadTarget({
+        sourceDbPath: args.dbPath,
+        target: args.target,
+      });
+
+      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
+      const result = generateCursorSessionFromT3({
+        t3Thread: t3Export,
+        chatId: args.newChatId,
+      });
+      process.stdout.write(`Exported T3 thread to Cursor chat.\n`);
+      process.stdout.write(`Chat ID: ${result.chatId}\n`);
+      process.stdout.write(`Chat directory: ${result.chatDir}\n`);
+      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      return;
+    }
+
+    if (args.adapter === "claude" && args.command === "list") {
+      runClaudeList(args);
+      return;
+    }
+
+  if (args.adapter === "claude" && args.command === "to-t3") {
+    const sourceFile = resolveClaudeSession(args.projectPath, args.target);
+    const claudeSession = parseClaudeSessionWithContext(sourceFile);
+    const result = importCodexIntoT3({
+      codexSession: {
+        sessionId: claudeSession.sessionId,
+        transcript: claudeSession.transcript,
+        model: claudeSession.model || "claude-sonnet-4-20250514",
+        originalCwd: claudeSession.originalCwd,
+        reasoningEffort: null,
+        interactionMode: "default",
+        runtimeMode: "approval-required",
+      },
+        dbPath: args.dbPath,
+        title: args.title,
+        projectId: args.projectId,
+        workspaceRoot: args.workspaceRoot,
+        backup: args.backup,
+        busyTimeoutMs: args.busyTimeoutMs,
+        lockRetries: args.lockRetries,
+        retryDelayMs: args.retryDelayMs,
+      });
+      process.stdout.write(`Imported Claude session ${claudeSession.sessionId} into T3.\n`);
+      process.stdout.write(`Thread ID: ${result.threadId}\n`);
+      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
+      process.stdout.write(`Database: ${result.dbPath}\n`);
+      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
+      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      return;
+    }
+
+    if (args.adapter === "claude" && args.command === "copy") {
+      const result = copyClaudeSession({
+        sourceRoot: args.projectPath,
+        targetRoot: args.destProjectPath,
+        sourceProject: args.projectPath,
+        targetProject: args.destProjectPath,
+        newSessionId: args.newSessionId,
+      });
+      process.stdout.write(
+        `Copied Claude session ${result.sourceSessionId} -> ${result.sessionId}\n`,
+      );
+      process.stdout.write(`Source file: ${result.sourceFile}\n`);
+      process.stdout.write(`Target file: ${result.targetFile}\n`);
+      return;
+    }
+
+    if (args.adapter === "cursor" && args.command === "list") {
+      runCursorList(args);
+      return;
+    }
+
+    if (args.adapter === "cursor" && args.command === "to-t3") {
+      const chatId = resolveCursorChat(args.target);
+      const chat = parseCursorChat(chatId);
+      const result = importCursorIntoT3({
+        cursorChatId: chatId,
+        dbPath: args.dbPath,
+        title: args.title,
+        projectId: args.projectId,
+        workspaceRoot: args.workspaceRoot,
+        backup: args.backup,
+        busyTimeoutMs: args.busyTimeoutMs,
+        lockRetries: args.lockRetries,
+        retryDelayMs: args.retryDelayMs,
+      });
+      process.stdout.write(`Imported Cursor chat ${chat.chatId} into T3.\n`);
+      process.stdout.write(`Thread ID: ${result.threadId}\n`);
+      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
+      process.stdout.write(`Database: ${result.dbPath}\n`);
+      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
+      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
       return;
     }
 
