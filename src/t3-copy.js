@@ -259,7 +259,7 @@ function remapSnapshotIds(snapshot, newThreadId) {
   };
 }
 
-function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, busyTimeoutMs }) {
+function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, busyTimeoutMs, newProjectId, newModelSelection }) {
   const db = new DatabaseSync(targetDbPath);
   try {
     db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
@@ -271,20 +271,31 @@ function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, bu
       updated_at: new Date().toISOString(),
     };
 
+    // Use new project if specified
+    if (newProjectId) {
+      thread.project_id = newProjectId;
+    }
+
+    // Update model selection if specified
+    if (newModelSelection) {
+      thread.model_selection_json = newModelSelection;
+    }
+
+    // Insert project if it doesn't exist
     db.prepare(`
       INSERT INTO projection_projects (
         project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at, default_model_selection_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(project_id) DO NOTHING
     `).run(
-      snapshot.project.project_id,
-      snapshot.project.title,
-      snapshot.project.workspace_root,
-      snapshot.project.scripts_json,
-      snapshot.project.created_at,
-      snapshot.project.updated_at,
-      snapshot.project.deleted_at,
-      snapshot.project.default_model_selection_json,
+      thread.project_id === snapshot.project.project_id ? snapshot.project.project_id : newProjectId,
+      thread.project_id === snapshot.project.project_id ? snapshot.project.title : 'New Project',
+      thread.project_id === snapshot.project.project_id ? snapshot.project.workspace_root : '',
+      thread.project_id === snapshot.project.project_id ? snapshot.project.scripts_json : '[]',
+      thread.project_id === snapshot.project.project_id ? snapshot.project.created_at : new Date().toISOString(),
+      thread.project_id === snapshot.project.project_id ? snapshot.project.updated_at : new Date().toISOString(),
+      thread.project_id === snapshot.project.project_id ? snapshot.project.deleted_at : null,
+      thread.project_id === snapshot.project.project_id ? snapshot.project.default_model_selection_json : null,
     );
 
     db.prepare(`
@@ -453,6 +464,8 @@ function copyThreadBetweenT3Dbs(options) {
     busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS,
     lockRetries = DEFAULT_LOCK_RETRIES,
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+    newProjectId = null,
+    newModelSelection = null,
   } = options;
 
   const resolvedSource = ensureDbExists(sourceDbPath);
@@ -469,8 +482,20 @@ function copyThreadBetweenT3Dbs(options) {
 
   const actualNewThreadId = newThreadId || crypto.randomUUID();
   const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
+  
+  // Update project if specified
+  if (newProjectId) {
+    remapped.thread.project_id = newProjectId;
+    remapped.thread.title = title || remapped.thread.title;
+  }
+  
+  // Update model selection if specified
+  if (newModelSelection) {
+    remapped.thread.model_selection_json = newModelSelection;
+  }
+  
   const retryConfig = { retries: lockRetries, retryDelayMs };
-  const backupPath = backup
+  const backupPath = backup && sourceDbPath === targetDbPath
     ? withLockRetries(() => backupSqlite(resolvedTarget, busyTimeoutMs), retryConfig)
     : null;
 
@@ -482,6 +507,8 @@ function copyThreadBetweenT3Dbs(options) {
         copyRuntime,
         titleOverride: title,
         busyTimeoutMs,
+        newProjectId,
+        newModelSelection,
       }),
     retryConfig,
   );
@@ -502,10 +529,93 @@ function copyThreadBetweenT3Dbs(options) {
   };
 }
 
+function copyThreadToNewWorkspace(options) {
+  const {
+    dbPath,
+    target,
+    newProjectId,
+    newProvider,
+    newModel,
+    newModelSelection,
+    title = null,
+    newThreadId = null,
+    copyRuntime = false,
+    backup = true,
+    busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS,
+    lockRetries = DEFAULT_LOCK_RETRIES,
+    retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+  } = options;
+
+  const resolvedDbPath = ensureDbExists(dbPath);
+  const sourceThreadId = resolveThreadTarget({
+    sourceDbPath: resolvedDbPath,
+    target,
+  });
+
+  const snapshot = buildSnapshot({
+    sourceDbPath: resolvedDbPath,
+    sourceThreadId,
+  });
+
+  const actualNewThreadId = newThreadId || crypto.randomUUID();
+  const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
+  
+  // Set new project
+  remapped.thread.project_id = newProjectId;
+  remapped.thread.title = title || (snapshot.thread.title + ' (new workspace)');
+  
+  // Update provider/model if specified
+  if (newModelSelection) {
+    // Use provided JSON directly
+    remapped.thread.model_selection_json = newModelSelection;
+  } else if (newProvider) {
+    // Build model selection JSON from provider and model
+    const modelSelection = {
+      provider: newProvider,
+      model: newModel || (newProvider === 'opencode' ? 'opencode/big-pickle' : 'gpt-5.4'),
+    };
+    remapped.thread.model_selection_json = JSON.stringify(modelSelection);
+  }
+  
+  const retryConfig = { retries: lockRetries, retryDelayMs };
+  const backupPath = backup
+    ? withLockRetries(() => backupSqlite(resolvedDbPath, busyTimeoutMs), retryConfig)
+    : null;
+
+  withLockRetries(
+    () =>
+      insertSnapshot({
+        targetDbPath: resolvedDbPath,
+        snapshot: remapped,
+        copyRuntime,
+        titleOverride: remapped.thread.title,
+        busyTimeoutMs,
+        newProjectId,
+        newModelSelection: remapped.thread.model_selection_json,
+      }),
+    retryConfig,
+  );
+
+  return {
+    sourceThreadId,
+    newThreadId: actualNewThreadId,
+    title: remapped.thread.title,
+    dbPath: resolvedDbPath,
+    backupPath,
+    counts: {
+      messages: remapped.messages.length,
+      turns: remapped.turns.length,
+      activities: remapped.activities.length,
+      proposedPlans: remapped.proposedPlans.length,
+    },
+  };
+}
+
 module.exports = {
   DEFAULT_BUSY_TIMEOUT_MS,
   DEFAULT_LOCK_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
   resolveThreadTarget,
   copyThreadBetweenT3Dbs,
+  copyThreadToNewWorkspace,
 };

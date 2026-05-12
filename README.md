@@ -15,6 +15,7 @@ approved_by:
 Current scope:
 - `t3 list`: list recent threads in a T3 SQLite DB
 - `t3 copy`: copy one thread from a source T3 DB to a target T3 DB as a new thread ID
+- `t3 copy-to-workspace`: copy a thread to a new workspace/project within the same DB with optional provider change
 - `t3 to-codex`: export one T3 thread into a Codex session file
 - `codex list`: list recent Codex sessions
 - `codex copy`: copy one Codex session to another Codex root as a new session ID
@@ -50,6 +51,37 @@ Copy from dev to non-dev:
   --busy-timeout-ms 5000 \
   --lock-retries 20 \
   --retry-delay-ms 500
+```
+
+Copy thread to a new workspace/project within the same DB (useful for changing providers or workdir):
+
+```bash
+./bin/threadbridge.js t3 copy-to-workspace 09ae8d8f-d340-4f2f-b14b-e152daf4e3a7 \
+  --db-path ~/.t3/userdata/state.sqlite \
+  --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
+  --new-provider opencode \
+  --new-model "opencode/big-pickle" \
+  --title "Continued in t3code workspace with OpenCode"
+```
+
+Convert from Claude to OpenCode with zen big-pickle model:
+
+```bash
+./bin/threadbridge.js t3 copy-to-workspace last \
+  --db-path ~/.t3/userdata/state.sqlite \
+  --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
+  --new-provider opencode \
+  --new-model "opencode/big-pickle"
+```
+
+Use custom model selection JSON for advanced configuration:
+
+```bash
+./bin/threadbridge.js t3 copy-to-workspace last \
+  --db-path ~/.t3/userdata/state.sqlite \
+  --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
+  --new-model-selection '{"provider":"opencode","model":"opencode/big-pickle","options":[{"id":"agent","value":"build"}]}' \
+  --title "Custom OpenCode config"
 ```
 
 List Codex sessions:

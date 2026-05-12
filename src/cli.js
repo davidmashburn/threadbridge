@@ -4,6 +4,7 @@ const { DatabaseSync } = require("node:sqlite");
 const {
   copyThreadBetweenT3Dbs,
   resolveThreadTarget,
+  copyThreadToNewWorkspace,
   DEFAULT_BUSY_TIMEOUT_MS,
   DEFAULT_LOCK_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
@@ -55,6 +56,7 @@ function usage() {
   return `Usage:
   threadbridge t3 list [--db-path PATH] [--limit N]
   threadbridge t3 copy [THREAD_ID|last] [--source-db-path PATH] [--db-path PATH] [--new-thread-id ID] [--title TEXT] [--copy-runtime] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+  threadbridge t3 copy-to-workspace [THREAD_ID|last] [--db-path PATH] [--new-project-id ID] [--new-provider PROVIDER] [--new-model MODEL] [--new-model-selection JSON] [--title TEXT] [--new-thread-id ID] [--copy-runtime] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   threadbridge t3 to-codex [THREAD_ID|last] [--db-path PATH] [--root DIR] [--new-session-id ID]
   threadbridge t3 to-claude [THREAD_ID|last] [--db-path PATH] [--project-path DIR]
   threadbridge t3 to-cursor [THREAD_ID|last] [--db-path PATH]
@@ -132,6 +134,10 @@ function parseArgs(argv) {
     title: null,
     workspaceRoot: null,
     projectId: null,
+    newProjectId: null,
+    newProvider: null,
+    newModel: null,
+    newModelSelection: null,
     copyRuntime: false,
     includeBoilerplate: false,
     backup: true,
@@ -143,39 +149,43 @@ function parseArgs(argv) {
   const positionals = [];
   for (let i = 0; i < rest.length; i += 1) {
     const token = rest[i];
-    if (token === "--copy-runtime") {
-      args.copyRuntime = true;
-      continue;
-    }
-    if (token === "--no-backup") {
-      args.backup = false;
-      continue;
-    }
-    if (token === "--include-boilerplate") {
-      args.includeBoilerplate = true;
-      continue;
-    }
-    if (
-      token === "--db-path" ||
-      token === "--source-db-path" ||
-      token === "--root" ||
-      token === "--dest-root" ||
-      token === "--project-path" ||
-      token === "--dest-project-path" ||
-      token === "--limit" ||
-      token === "--new-thread-id" ||
-      token === "--new-session-id" ||
-      token === "--new-chat-id" ||
-      token === "--new-opencode-session-id" ||
-      token === "--title" ||
-      token === "--workspace-root" ||
-      token === "--project-id" ||
-      token === "--busy-timeout-ms" ||
-      token === "--lock-retries" ||
-      token === "--retry-delay-ms" ||
-      token === "--opencode-root" ||
-      token === "--dest-opencode-root"
-    ) {
+      if (token === "--copy-runtime") {
+        args.copyRuntime = true;
+        continue;
+      }
+      if (token === "--no-backup") {
+        args.backup = false;
+        continue;
+      }
+      if (token === "--include-boilerplate") {
+        args.includeBoilerplate = true;
+        continue;
+      }
+      if (
+        token === "--db-path" ||
+        token === "--source-db-path" ||
+        token === "--root" ||
+        token === "--dest-root" ||
+        token === "--project-path" ||
+        token === "--dest-project-path" ||
+        token === "--limit" ||
+        token === "--new-thread-id" ||
+        token === "--new-session-id" ||
+        token === "--new-chat-id" ||
+        token === "--new-opencode-session-id" ||
+        token === "--title" ||
+        token === "--workspace-root" ||
+        token === "--project-id" ||
+        token === "--new-project-id" ||
+        token === "--new-provider" ||
+        token === "--new-model" ||
+        token === "--new-model-selection" ||
+        token === "--busy-timeout-ms" ||
+        token === "--lock-retries" ||
+        token === "--retry-delay-ms" ||
+        token === "--opencode-root" ||
+        token === "--dest-opencode-root"
+      ) {
       const next = rest[i + 1];
       if (!next) fail(`Missing value for ${token}`);
       i += 1;
@@ -198,13 +208,17 @@ function parseArgs(argv) {
       else if (token === "--opencode-root") args.opencodeRoot = next;
       else if (token === "--dest-opencode-root") args.destOpenCodeRoot = next;
       else if (token === "--new-opencode-session-id") args.newOpenCodeSessionId = next;
+      else if (token === "--new-project-id") args.newProjectId = next;
+      else if (token === "--new-provider") args.newProvider = next;
+      else if (token === "--new-model") args.newModel = next;
+      else if (token === "--new-model-selection") args.newModelSelection = next;
       continue;
     }
     if (token.startsWith("--")) fail(`Unknown option: ${token}`);
     positionals.push(token);
   }
 
-  const validT3 = ["list", "copy", "to-codex", "to-claude", "to-cursor", "to-opencode"];
+  const validT3 = ["list", "copy", "copy-to-workspace", "to-codex", "to-claude", "to-cursor", "to-opencode"];
   const validCodex = ["list", "copy", "to-t3"];
   const validClaude = ["list", "copy", "to-t3"];
   const validCursor = ["list", "copy", "to-t3"];
@@ -356,6 +370,35 @@ function runCli(argv) {
       process.stdout.write(`Title: ${result.title}\n`);
       process.stdout.write(`Source DB: ${result.sourceDbPath}\n`);
       process.stdout.write(`Target DB: ${result.targetDbPath}\n`);
+      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(
+        `Copied rows: messages=${result.counts.messages}, turns=${result.counts.turns}, activities=${result.counts.activities}, proposedPlans=${result.counts.proposedPlans}\n`,
+      );
+      return;
+    }
+
+    if (args.adapter === "t3" && args.command === "copy-to-workspace") {
+      if (!args.newProjectId) {
+        fail("--new-project-id is required for copy-to-workspace");
+      }
+      const result = copyThreadToNewWorkspace({
+        dbPath: args.dbPath,
+        target: args.target,
+        newProjectId: args.newProjectId,
+        newProvider: args.newProvider,
+        newModel: args.newModel,
+        newModelSelection: args.newModelSelection,
+        title: args.title,
+        newThreadId: args.newThreadId,
+        copyRuntime: args.copyRuntime,
+        backup: args.backup,
+        busyTimeoutMs: args.busyTimeoutMs,
+        lockRetries: args.lockRetries,
+        retryDelayMs: args.retryDelayMs,
+      });
+      process.stdout.write(`Copied thread ${result.sourceThreadId} -> ${result.newThreadId}\n`);
+      process.stdout.write(`Title: ${result.title}\n`);
+      process.stdout.write(`DB: ${result.dbPath}\n`);
       if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
       process.stdout.write(
         `Copied rows: messages=${result.counts.messages}, turns=${result.counts.turns}, activities=${result.counts.activities}, proposedPlans=${result.counts.proposedPlans}\n`,
