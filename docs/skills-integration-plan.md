@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:30:00Z
-modified_at: 2026-04-22T09:30:00Z
+modified_at: 2026-04-22T15:25:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -9,7 +9,7 @@ approved_by:
 repo: https://github.com/davidmashburn/threadbridge
 branch: main
 repo_branch_url: https://github.com/davidmashburn/threadbridge/tree/main
-repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/ba4a072
+repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/ca70200
 ---
 
 # Threadbridge Skill Integration Plan
@@ -17,6 +17,20 @@ repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/ba4a0
 ## Goal
 
 Make `threadbridge` callable from multiple harnesses as a common interconversion utility, without requiring the invoking harness to be either the source or target of the conversion.
+
+## Current Reality
+
+This plan keeps **T3 Code out of scope as a direct integration target**.
+
+Working baseline today:
+
+- Codex skills call `threadbridge` CLI.
+- `threadbridge` performs Codex/T3 conversions directly.
+- T3 can still benefit indirectly when it runs an underlying harness that supports skills (for example Codex).
+
+Out of scope for this plan:
+
+- T3-native server/API/command-palette integration work.
 
 ## Guiding Principles
 
@@ -60,12 +74,9 @@ Standard safety defaults:
 
 ### T3 Code
 
-- Prefer server-integrated command surface over direct SQLite from the UI path.
-- Until server endpoint exists, use lock-aware CLI path with clear receipts.
-- Expose actions like:
-  - import from Codex
-  - export to Codex
-  - clone from dev/userdata
+- T3 is not a primary skill host in this plan.
+- T3 participation is indirect through the active harness underneath it.
+- No T3 source modifications are planned here.
 
 ### Claude
 
@@ -103,7 +114,7 @@ Standard safety defaults:
 - Codex skill wrapper in `skills/`.
 - MCP wrapper for Claude/OpenCode.
 - Cursor command pack.
-- T3-side integration hook for API-native import/export.
+- No T3-native integration phase in this plan.
 
 ### Phase 4: Additional Harness Pairs
 

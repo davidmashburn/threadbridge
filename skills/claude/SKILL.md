@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:58:00Z
-modified_at: 2026-04-22T09:58:00Z
+modified_at: 2026-05-01T03:30:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -16,45 +16,62 @@ repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/eb533
 
 ## Purpose
 
-Define Claude-side behavior for invoking `threadbridge` via tool wrapper/MCP without requiring Claude to be source or destination.
+Run `threadbridge` conversions from Claude, including cross-harness operations where Claude is not the source or target.
 
 ## Trigger Conditions
 
-Use this skill when asked to:
+Use this skill when the user asks to:
 
-- move thread history between harnesses
-- recover thread context from Codex/T3
-- produce conversion receipts for downstream agents
+- list Claude or T3 threads/sessions
+- copy threads/sessions
+- convert between Claude and T3
+- recover a thread from dev/non-dev environments
+- convert threads between providers (e.g., Claude to OpenCode, Codex to Cursor)
 
-## Adapter Contract
+## Command Mapping
 
-Expose these operations in the Claude wrapper:
+### Claude Operations
+- List Claude sessions:
+  - `threadbridge claude list <PROJECT_PATH> --limit <N>`
+- Copy Claude session:
+  - `threadbridge claude copy <SESSION|last> --project-path <DIR> --dest-project-path <DIR>`
 
-- `threadbridge.codex.list`
-- `threadbridge.codex.copy`
-- `threadbridge.codex.to_t3`
-- `threadbridge.t3.list`
-- `threadbridge.t3.copy`
-- `threadbridge.t3.to_codex`
+### T3 Operations with Provider Conversion
+- List T3 threads:
+  - `threadbridge t3 list --db-path ~/.t3/userdata/state.sqlite --limit <N>`
+- **Convert Claude thread to OpenCode**:
+  - `threadbridge t3 copy-to-workspace <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --new-project-id <PROJECT_ID> --new-provider opencode --new-model "opencode/big-pickle" --title "Now using OpenCode"`
 
-Each operation maps directly to one CLI command.
+### Cross-Provider Conversions
+- Claude -> T3:
+  - `threadbridge claude to-t3 <SESSION|last> --project-path <DIR> --db-path ~/.t3/userdata/state.sqlite`
+- T3 -> Claude:
+  - `threadbridge t3 to-claude <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --project-path <DIR>`
+- **Convert to different provider** (e.g., Codex to Claude):
+  - `threadbridge t3 copy-to-workspace <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --new-project-id <TARGET_PROJECT> --new-provider claudeAgent --new-model "claude-sonnet-4-6"`
+
+### Provider Options
+- `--new-provider`: Convert to provider (`codex`, `claudeAgent`, `opencode`, `cursor`)
+- `--new-model`: Set model for target provider
+- `--new-model-selection`: Full JSON for advanced config
+- `--new-project-id`: Target workspace/project ID
 
 ## Safety Rules
 
-- Reads can run immediately.
-- Writes require explicit user confirmation before execution.
-- Keep runtime copy disabled unless user opts in.
-- Keep DB backup on for write paths.
+- Read commands can execute immediately.
+- For write commands, show the exact command and wait for explicit approval.
+- Keep runtime/session state out of copies unless user explicitly asks:
+  - default: no `--copy-runtime`
+  - opt-in only
+- Keep backups enabled by default (do not pass `--no-backup` unless requested).
 
-## Output Shape
+## Response Contract
 
-Claude tool result should include:
+After running, report:
 
-- `ok` boolean
-- `operation`
-- `source`
-- `target`
-- `counts`
-- `backupPath` (if any)
-- `stdout` summary
-- `warnings`
+- source ID/path
+- target ID/path
+- counts (messages/turns/activities when available)
+- backup path for DB writes
+- note to reload harness UI if needed
+- provider conversion details (if applicable)
