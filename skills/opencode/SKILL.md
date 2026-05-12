@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:58:00Z
-modified_at: 2026-04-22T09:58:00Z
+modified_at: 2026-05-01T03:30:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -16,38 +16,67 @@ repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/eb533
 
 ## Purpose
 
-Define OpenCode-side invocation rules for `threadbridge` operations, including non-OpenCode source/target conversions.
+Run `threadbridge` conversions from OpenCode, including cross-harness operations where OpenCode is not the source or target.
 
 ## Trigger Conditions
 
-Use this skill when user intent is:
+Use this skill when the user asks to:
 
-- session/thread migration
-- environment recovery
-- cross-harness portability
+- list OpenCode sessions or T3 threads
+- copy sessions/threads
+- convert between OpenCode and T3
+- recover a thread from dev/non-dev environments
+- convert threads between providers (e.g., OpenCode to Codex, Claude to Cursor)
 
-## Command Templates
+## Command Mapping
 
-- `threadbridge codex list --root <codexRoot> --limit <N>`
-- `threadbridge codex copy <sessionTarget> --root <codexRoot> --dest-root <codexRoot>`
-- `threadbridge codex to-t3 <sessionTarget> --root <codexRoot> --db-path <t3DbPath>`
-- `threadbridge t3 list --db-path <t3DbPath> --limit <N>`
-- `threadbridge t3 copy <threadTarget> --source-db-path <sourceDb> --db-path <targetDb>`
-- `threadbridge t3 to-codex <threadTarget> --db-path <t3DbPath> --root <codexRoot>`
+### OpenCode Operations
+- List OpenCode sessions:
+  - `threadbridge opencode list --root <OPENCODE_ROOT> --limit <N>`
+- Copy OpenCode session:
+  - `threadbridge opencode copy <SESSION|last> --root <OPENCODE_ROOT> --dest-root <OPENCODE_ROOT>`
+
+### T3 Operations with Provider Conversion
+- List T3 threads:
+  - `threadbridge t3 list --db-path ~/.t3/userdata/state.sqlite --limit <N>`
+- **Convert OpenCode thread to Codex**:
+  - `threadbridge t3 copy-to-workspace <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --new-project-id <PROJECT_ID> --new-provider codex --new-model "gpt-5.4" --title "Now using Codex"`
+
+### Cross-Provider Conversions
+- OpenCode -> T3:
+  - `threadbridge opencode to-t3 <SESSION|last> --root <OPENCODE_ROOT> --db-path ~/.t3/userdata/state.sqlite`
+- T3 -> OpenCode:
+  - `threadbridge t3 to-opencode <THREAD|last> --db-path ~/.t3/userdata/state.sqlite`
+- **Convert to different provider** (e.g., Claude to OpenCode with zen big-pickle):
+  - `threadbridge t3 copy-to-workspace <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --new-project-id <TARGET_PROJECT> --new-provider opencode --new-model "opencode/big-pickle"`
+
+### Provider Options
+- `--new-provider`: Convert to provider (`codex`, `claudeAgent`, `opencode`, `cursor`)
+- `--new-model`: Set model for target provider (e.g., `opencode/big-pickle`, `gpt-5.4`, `claude-sonnet-4-6`)
+- `--new-model-selection`: Full JSON for advanced config
+- `--new-project-id`: Target workspace/project ID
+
+### OpenCode-Specific Models
+- `opencode/big-pickle` - zen big-pickle model
+- `google/gemma-4-31b-it` - Gemma 4 31B
+- `openrouter/*` - OpenRouter models
 
 ## Safety Rules
 
-- Prompt for approval before write operations.
-- Do not disable backup by default.
-- Only include `--copy-runtime` on explicit user request.
-- Include lock retry flags for T3 DB writes in active environments.
+- Read commands can execute immediately.
+- For write commands, show the exact command and wait for explicit approval.
+- Keep runtime/session state out of copies unless user explicitly asks:
+  - default: no `--copy-runtime`
+  - opt-in only
+- Keep backups enabled by default (do not pass `--no-backup` unless requested).
 
-## Receipt Requirements
+## Response Contract
 
-Always return:
+After running, report:
 
-- operation name
-- source and target ids/paths
-- row/message counts
-- backup path
-- warnings about UI reload/stale caches when relevant
+- source ID/path
+- target ID/path
+- counts (messages/turns/activities when available)
+- backup path for DB writes
+- note to reload harness UI if needed
+- provider conversion details (if applicable)
