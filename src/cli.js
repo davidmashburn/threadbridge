@@ -60,7 +60,7 @@ function usage() {
   threadbridge t3 to-codex [THREAD_ID|last] [--db-path PATH] [--root DIR] [--new-session-id ID]
   threadbridge t3 to-claude [THREAD_ID|last] [--db-path PATH] [--project-path DIR]
   threadbridge t3 to-cursor [THREAD_ID|last] [--db-path PATH]
-  threadbridge t3 to-opencode [THREAD_ID|last] [--db-path PATH]
+  threadbridge t3 to-opencode [THREAD_ID|last] [--db-path PATH] [--root DIR] [--opencode-root DIR]
 
   threadbridge codex list [--root DIR] [--limit N] [--include-boilerplate]
   threadbridge codex copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
@@ -101,6 +101,10 @@ function parsePositiveInt(flag, value) {
     fail(`Invalid value for ${flag}: ${value}`);
   }
   return parsed;
+}
+
+function usesOpenCodeRoot(adapter, command) {
+  return adapter === "opencode" || (adapter === "t3" && command === "to-opencode");
 }
 
 function parseArgs(argv) {
@@ -149,54 +153,60 @@ function parseArgs(argv) {
   const positionals = [];
   for (let i = 0; i < rest.length; i += 1) {
     const token = rest[i];
-      if (token === "--copy-runtime") {
-        args.copyRuntime = true;
-        continue;
-      }
-      if (token === "--no-backup") {
-        args.backup = false;
-        continue;
-      }
-      if (token === "--include-boilerplate") {
-        args.includeBoilerplate = true;
-        continue;
-      }
-      if (
-        token === "--db-path" ||
-        token === "--source-db-path" ||
-        token === "--root" ||
-        token === "--dest-root" ||
-        token === "--project-path" ||
-        token === "--dest-project-path" ||
-        token === "--limit" ||
-        token === "--new-thread-id" ||
-        token === "--new-session-id" ||
-        token === "--new-chat-id" ||
-        token === "--new-opencode-session-id" ||
-        token === "--title" ||
-        token === "--workspace-root" ||
-        token === "--project-id" ||
-        token === "--new-project-id" ||
-        token === "--new-provider" ||
-        token === "--new-model" ||
-        token === "--new-model-selection" ||
-        token === "--busy-timeout-ms" ||
-        token === "--lock-retries" ||
-        token === "--retry-delay-ms" ||
-        token === "--opencode-root" ||
-        token === "--dest-opencode-root"
-      ) {
+    if (token === "--copy-runtime") {
+      args.copyRuntime = true;
+      continue;
+    }
+    if (token === "--no-backup") {
+      args.backup = false;
+      continue;
+    }
+    if (token === "--include-boilerplate") {
+      args.includeBoilerplate = true;
+      continue;
+    }
+    if (
+      token === "--db-path" ||
+      token === "--source-db-path" ||
+      token === "--root" ||
+      token === "--dest-root" ||
+      token === "--project-path" ||
+      token === "--dest-project-path" ||
+      token === "--limit" ||
+      token === "--new-thread-id" ||
+      token === "--new-session-id" ||
+      token === "--new-chat-id" ||
+      token === "--new-opencode-session-id" ||
+      token === "--title" ||
+      token === "--workspace-root" ||
+      token === "--project-id" ||
+      token === "--new-project-id" ||
+      token === "--new-provider" ||
+      token === "--new-model" ||
+      token === "--new-model-selection" ||
+      token === "--busy-timeout-ms" ||
+      token === "--lock-retries" ||
+      token === "--retry-delay-ms" ||
+      token === "--opencode-root" ||
+      token === "--dest-opencode-root"
+    ) {
       const next = rest[i + 1];
       if (!next) fail(`Missing value for ${token}`);
       i += 1;
       if (token === "--db-path") args.dbPath = next;
       else if (token === "--source-db-path") args.sourceDbPath = next;
-      else if (token === "--root") args.root = next;
-      else if (token === "--dest-root") args.destRoot = next;
-      else if (token === "--limit") args.limit = parsePositiveInt(token, next);
+      else if (token === "--root") {
+        args.root = next;
+        if (usesOpenCodeRoot(adapter, command)) args.opencodeRoot = next;
+      } else if (token === "--dest-root") {
+        args.destRoot = next;
+        if (adapter === "opencode") args.destOpenCodeRoot = next;
+      } else if (token === "--limit") args.limit = parsePositiveInt(token, next);
       else if (token === "--new-thread-id") args.newThreadId = next;
-      else if (token === "--new-session-id") args.newSessionId = next;
-      else if (token === "--title") args.title = next;
+      else if (token === "--new-session-id") {
+        args.newSessionId = next;
+        if (adapter === "opencode") args.newOpenCodeSessionId = next;
+      } else if (token === "--title") args.title = next;
       else if (token === "--workspace-root") args.workspaceRoot = next;
       else if (token === "--project-id") args.projectId = next;
       else if (token === "--busy-timeout-ms") args.busyTimeoutMs = parsePositiveInt(token, next);
@@ -524,24 +534,19 @@ function runCli(argv) {
       return;
     }
 
-    if (args.adapter === "claude" && args.command === "list") {
-      runClaudeList(args);
-      return;
-    }
-
-  if (args.adapter === "claude" && args.command === "to-t3") {
-    const sourceFile = resolveClaudeSession(args.projectPath, args.target);
-    const claudeSession = parseClaudeSessionWithContext(sourceFile);
-    const result = importCodexIntoT3({
-      codexSession: {
-        sessionId: claudeSession.sessionId,
-        transcript: claudeSession.transcript,
-        model: claudeSession.model || "claude-sonnet-4-20250514",
-        originalCwd: claudeSession.originalCwd,
-        reasoningEffort: null,
-        interactionMode: "default",
-        runtimeMode: "approval-required",
-      },
+    if (args.adapter === "claude" && args.command === "to-t3") {
+      const sourceFile = resolveClaudeSession(args.projectPath, args.target);
+      const claudeSession = parseClaudeSessionWithContext(sourceFile);
+      const result = importCodexIntoT3({
+        codexSession: {
+          sessionId: claudeSession.sessionId,
+          transcript: claudeSession.transcript,
+          model: claudeSession.model || "claude-sonnet-4-20250514",
+          originalCwd: claudeSession.originalCwd,
+          reasoningEffort: null,
+          interactionMode: "default",
+          runtimeMode: "approval-required",
+        },
         dbPath: args.dbPath,
         title: args.title,
         projectId: args.projectId,
@@ -563,6 +568,7 @@ function runCli(argv) {
 
     if (args.adapter === "claude" && args.command === "copy") {
       const result = copyClaudeSession({
+        target: args.target,
         sourceRoot: args.projectPath,
         targetRoot: args.destProjectPath,
         sourceProject: args.projectPath,
@@ -632,7 +638,7 @@ function runCli(argv) {
         root: args.opencodeRoot,
         target: args.target,
       });
-      const opencodeSession = parseOpenCodeSession(sourceFile);
+      const opencodeSession = parseOpenCodeSession(sourceFile, { root: args.opencodeRoot });
       const result = importCodexIntoT3({
         codexSession: {
           sessionId: opencodeSession.sessionId,
@@ -668,4 +674,4 @@ function runCli(argv) {
   }
 }
 
-module.exports = { runCli };
+module.exports = { runCli, parseArgs };

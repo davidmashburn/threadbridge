@@ -15,6 +15,9 @@ const COMPOSER_BUBBLE_TYPE_USER = 1;
 const COMPOSER_BUBBLE_TYPE_AI = 2;
 
 function resolveCursorDataDir() {
+  if (process.env.CURSOR_DATA_DIR) {
+    return process.env.CURSOR_DATA_DIR;
+  }
   if (os.platform() === "darwin") {
     return path.join(os.homedir(), "Library", "Application Support", "Cursor", "User");
   }
@@ -32,9 +35,14 @@ function resolveWorkspaceStorageDir() {
   return path.join(resolveCursorDataDir(), "workspaceStorage");
 }
 
+function resolveAcpSessionsDir() {
+  return path.join(resolveCursorDataDir(), "acp-sessions");
+}
+
 function resolveChatsDir() {
-  if (fs.existsSync(CHATS_ROOT)) {
-    return CHATS_ROOT;
+  const acpSessionsDir = resolveAcpSessionsDir();
+  if (fs.existsSync(acpSessionsDir)) {
+    return acpSessionsDir;
   }
   const globalStorage = resolveGlobalStorageDir();
   if (fs.existsSync(globalStorage)) {
@@ -71,6 +79,14 @@ function extractTextFromMessage(message) {
   if (!message) return "";
   if (typeof message === "string") return message;
   if (typeof message.text === "string") return message.text;
+  if (Array.isArray(message)) {
+    return message.map((part) => {
+      if (typeof part === "string") return part;
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.content === "string") return part.content;
+      return "";
+    }).join("\n").trim();
+  }
   if (Array.isArray(message.parts)) {
     return message.parts.map((p) => {
       if (typeof p.text === "string") return p.text;
@@ -197,6 +213,23 @@ function extractCursorChatData(storePath) {
             chatData.push({ _file: file, ...jsonData });
           } catch {}
         }
+      }
+    } catch {}
+
+    // ACP exports created by threadbridge store the payload in ChatSessions.data.
+    try {
+      const sessionRows = db.prepare("SELECT * FROM ChatSessions").all();
+      for (const row of sessionRows) {
+        const rowData = { ...row };
+        for (const key of Object.keys(rowData)) {
+          const value = rowData[key];
+          if (typeof value === "string" && value.startsWith("{")) {
+            try {
+              rowData[key] = JSON.parse(value);
+            } catch {}
+          }
+        }
+        chatData.push(rowData);
       }
     } catch {}
 
@@ -380,9 +413,28 @@ function parseCursorChat(chatId) {
             });
           }
         }
+      } else if (item.data && Array.isArray(item.data.chatSessions)) {
+        for (const session of item.data.chatSessions) {
+          if (session.title && title === target.chatId) {
+            title = session.title;
+          }
+          for (const msg of session.messages || []) {
+            const role = msg.role || msg.author || "user";
+            const text = extractTextFromMessage(msg.content || msg.text || msg.message);
+            if (text) {
+              transcript.push({
+                role: role === "ai" ? "assistant" : role,
+                text,
+                timestamp: msg.timestamp || msg.createdAt,
+              });
+            }
+          }
+        }
       }
     }
   }
+
+  transcript.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
 
   return {
     chatId: target.chatId,
@@ -456,7 +508,7 @@ function generateCursorSessionFromT3({
     ],
   };
 
-  const chatsDir = CHATS_ROOT;
+  const chatsDir = resolveAcpSessionsDir();
   fs.mkdirSync(chatsDir, { recursive: true });
   const chatDir = path.join(chatsDir, id);
   fs.mkdirSync(chatDir, { recursive: true });
@@ -730,6 +782,7 @@ module.exports = {
   DEFAULT_CURSOR_ROOT,
   CHATS_ROOT,
   resolveCursorDataDir,
+  resolveAcpSessionsDir,
   resolveGlobalStorageDir,
   resolveWorkspaceStorageDir,
   resolveCursorGlobalStateDb,

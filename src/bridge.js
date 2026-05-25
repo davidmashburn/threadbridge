@@ -447,6 +447,8 @@ function generateCodexSessionFromT3({
 
 module.exports = {
   importCodexIntoT3,
+  mapTranscriptToTurns,
   buildT3Export,
   generateCodexSessionFromT3,
+  withLockRetries,
 };

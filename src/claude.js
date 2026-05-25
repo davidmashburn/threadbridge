@@ -15,15 +15,31 @@ function walkSessions(rootDir) {
     return [];
   }
 
+  const stack = [rootDir];
   const results = [];
-  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-      results.push(path.join(rootDir, entry.name));
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        results.push(fullPath);
+      }
     }
   }
 
   return results.sort();
+}
+
+function resolveClaudeProjectRoot(projectPath) {
+  const storageRoot = path.join(DEFAULT_CLAUDE_ROOT, sanitizeProjectPath(projectPath));
+  if (fs.existsSync(storageRoot)) {
+    return storageRoot;
+  }
+  return projectPath;
 }
 
 function readJsonl(filePath) {
@@ -110,14 +126,12 @@ function summarizeClaudeSession(filePath) {
 }
 
 function listClaudeSessions(projectPath, { limit = 10 } = {}) {
-  const root = fs.existsSync(projectPath) ? projectPath : path.join(DEFAULT_CLAUDE_ROOT, sanitizeProjectPath(projectPath));
+  const root = resolveClaudeProjectRoot(projectPath);
   if (!fs.existsSync(root)) {
     return [];
   }
 
-  const files = fs.readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".jsonl"))
-    .map((e) => path.join(root, e.name));
+  const files = walkSessions(root);
 
   return files
     .map((f) => summarizeClaudeSession(f))
@@ -126,15 +140,13 @@ function listClaudeSessions(projectPath, { limit = 10 } = {}) {
 }
 
 function resolveClaudeSession(projectPath, sessionTarget) {
-  const root = fs.existsSync(projectPath) ? projectPath : path.join(DEFAULT_CLAUDE_ROOT, sanitizeProjectPath(projectPath));
+  const root = resolveClaudeProjectRoot(projectPath);
 
   if (!fs.existsSync(root)) {
     throw new Error(`No Claude sessions found for project: ${projectPath}`);
   }
 
-  const files = fs.readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".jsonl"))
-    .map((e) => path.join(root, e.name));
+  const files = walkSessions(root);
 
   if (files.length === 0) {
     throw new Error(`No Claude sessions found for project: ${projectPath}`);
@@ -220,7 +232,7 @@ function formatClaudeRelativePathFromDate(isoTimestamp, sessionId) {
 
 function exportT3ToClaudeFormat({
   t3Thread,
-  targetRoot,
+  targetRoot = DEFAULT_CLAUDE_ROOT,
   projectPath,
 }) {
   const now = new Date().toISOString();
@@ -267,7 +279,7 @@ function exportT3ToClaudeFormat({
 
   const sanitized = sanitizeProjectPath(projectPath || t3Thread.workspaceRoot || process.cwd());
   const relativePath = formatClaudeRelativePathFromDate(now, sessionId);
-  const outputPath = path.join(DEFAULT_CLAUDE_ROOT, sanitized, "sessions", relativePath);
+  const outputPath = path.join(targetRoot, sanitized, "sessions", relativePath);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, lines.map((line) => JSON.stringify(line)).join("\n") + "\n", "utf8");
 
@@ -279,13 +291,14 @@ function exportT3ToClaudeFormat({
 }
 
 function copyClaudeSession({
+  target,
   sourceRoot,
-  targetRoot,
+  targetRoot = DEFAULT_CLAUDE_ROOT,
   sourceProject,
   targetProject,
   newSessionId = null,
 }) {
-  const sourceFile = resolveClaudeSession(sourceProject || sourceRoot, sourceRoot);
+  const sourceFile = resolveClaudeSession(sourceProject || sourceRoot, target);
   const records = readJsonl(sourceFile);
   const summary = summarizeClaudeSession(sourceFile);
   const sessionId = newSessionId || `tb-${crypto.randomBytes(4).toString("hex")}`;
@@ -306,7 +319,9 @@ function copyClaudeSession({
     return record;
   });
 
-  const targetPath = path.join(DEFAULT_CLAUDE_ROOT, sanitizeProjectPath(targetProject || targetRoot));
+  const targetPath = targetProject
+    ? path.join(targetRoot, sanitizeProjectPath(targetProject))
+    : targetRoot;
   const relativePath = formatClaudeRelativePathFromDate(now, sessionId);
   const targetFile = path.join(targetPath, "sessions", relativePath);
   fs.mkdirSync(path.dirname(targetFile), { recursive: true });
@@ -323,6 +338,7 @@ function copyClaudeSession({
 module.exports = {
   DEFAULT_CLAUDE_ROOT,
   sanitizeProjectPath,
+  resolveClaudeProjectRoot,
   listClaudeSessions,
   resolveClaudeSession,
   parseClaudeSession,

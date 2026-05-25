@@ -63,6 +63,9 @@ function listOpenCodeSessions({ root, limit = 10 }) {
 function resolveOpenCodeSessionTarget({ root, target }) {
   const storageRoot = root || getOpenCodeRoot();
   const sessions = listOpenCodeSessions({ root: storageRoot, limit: 10000 });
+  if (sessions.length === 0) {
+    throw new Error(`No OpenCode sessions found under ${storageRoot}`);
+  }
 
   if (!target || target === "last") return sessions[0]?.filePath;
   if (fs.existsSync(target)) return path.resolve(target);
@@ -106,8 +109,8 @@ function getMessageText(messageId, storageRoot) {
   return texts.join("\n").trim();
 }
 
-function parseOpenCodeSession(sessionFilePath) {
-  const storageRoot = getOpenCodeRoot();
+function parseOpenCodeSession(sessionFilePath, { root = null } = {}) {
+  const storageRoot = root || getOpenCodeRoot();
   const session = readJsonFile(sessionFilePath);
   const sessionId = session.id;
   const messageFiles = getMessageFiles(sessionId, storageRoot);
@@ -129,6 +132,7 @@ function parseOpenCodeSession(sessionFilePath) {
       // skip unreadable messages
     }
   }
+  transcript.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
 
   return {
     sessionId,

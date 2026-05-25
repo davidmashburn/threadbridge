@@ -17,9 +17,15 @@ Current scope:
 - `t3 copy`: copy one thread from a source T3 DB to a target T3 DB as a new thread ID
 - `t3 copy-to-workspace`: copy a thread to a new workspace/project within the same DB with optional provider change
 - `t3 to-codex`: export one T3 thread into a Codex session file
+- `t3 to-claude`: export one T3 thread into a Claude session file
+- `t3 to-cursor`: export one T3 thread into a Cursor chat
+- `t3 to-opencode`: export one T3 thread into an OpenCode session
 - `codex list`: list recent Codex sessions
 - `codex copy`: copy one Codex session to another Codex root as a new session ID
 - `codex to-t3`: import one Codex session into T3 as a new thread
+- `claude list|copy|to-t3`: inspect, duplicate, and import Claude sessions
+- `cursor list|to-t3`: inspect and import Cursor ACP/Composer chats
+- `opencode list|copy|to-t3`: inspect, duplicate, and import OpenCode sessions
 
 The T3 copy/import flows are designed for live usage while T3 is open:
 - SQLite `busy_timeout`
@@ -33,6 +39,10 @@ The T3 copy/import flows are designed for live usage while T3 is open:
 npm install
 npm run check
 ```
+
+Prerequisites:
+- Node.js 22+
+- `sqlite3` available on `PATH` for backup-enabled T3 import/copy flows
 
 ## Usage
 
@@ -114,6 +124,41 @@ Copy Codex session between roots:
   --dest-root ~/.codex/sessions
 ```
 
+List Claude sessions for a project:
+
+```bash
+./bin/threadbridge.js claude list ~/src/my-project --limit 5
+```
+
+Copy a Claude session into another project:
+
+```bash
+./bin/threadbridge.js claude copy last \
+  --project-path ~/src/my-project \
+  --dest-project-path ~/src/other-project
+```
+
+Import a Cursor chat into T3:
+
+```bash
+./bin/threadbridge.js cursor to-t3 last \
+  --db-path ~/.t3/userdata/state.sqlite
+```
+
+List OpenCode sessions:
+
+```bash
+./bin/threadbridge.js opencode list --root ~/.local/share/opencode/storage --limit 5
+```
+
+Copy an OpenCode session between roots:
+
+```bash
+./bin/threadbridge.js opencode copy last \
+  --root ~/.local/share/opencode/storage \
+  --dest-root ~/.local/share/opencode/storage
+```
+
 Optional flags:
 - `--title "New thread title"`: override copied title
 - `--new-thread-id <uuid>`: set target thread ID manually
@@ -124,3 +169,6 @@ Optional flags:
 
 - Default behavior does **not** copy runtime/session bindings.
 - That keeps copied threads as safe historical snapshots unless you explicitly opt in with `--copy-runtime`.
+- `copy` and `to-t3` commands require the source database or session root to exist.
+- Ambiguous targets fail fast instead of guessing.
+- Live T3 copy/import flows use a lock retry/backoff loop and a pre-write SQLite backup unless `--no-backup` is set.

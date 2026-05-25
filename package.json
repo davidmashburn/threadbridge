@@ -7,8 +7,16 @@
   "bin": {
     "threadbridge": "./bin/threadbridge.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "skills/",
+    "docs/skills-integration-plan.md",
+    "README.md"
+  ],
   "scripts": {
-    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js && node --check ./src/codex.js && node --check ./src/bridge.js && node --check ./src/claude.js && node --check ./src/cursor.js"
+    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js && node --check ./src/codex.js && node --check ./src/bridge.js && node --check ./src/claude.js && node --check ./src/cursor.js && node --check ./src/opencode.js && node --check ./test/cli.test.js",
+    "test": "node --test ./test/cli.test.js"
   },
   "engines": {
     "node": ">=22"
