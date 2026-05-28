@@ -15,7 +15,7 @@
     "README.md"
   ],
   "scripts": {
-    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js && node --check ./src/codex.js && node --check ./src/bridge.js && node --check ./src/claude.js && node --check ./src/cursor.js && node --check ./src/opencode.js && node --check ./test/cli.test.js",
+    "check": "node --check ./bin/threadbridge.js && node --check ./src/cli.js && node --check ./src/t3-copy.js && node --check ./src/codex.js && node --check ./src/bridge.js && node --check ./src/claude.js && node --check ./src/cursor.js && node --check ./src/opencode.js && node --check ./src/ir.js && node --check ./src/intents.js && node --check ./src/receipts.js && node --check ./src/adapters/t3/read.js && node --check ./src/adapters/t3/write.js && node --check ./src/adapters/codex/read.js && node --check ./src/adapters/codex/write.js && node --check ./src/adapters/claude/read.js && node --check ./src/adapters/claude/write.js && node --check ./src/adapters/opencode/read.js && node --check ./src/adapters/opencode/write.js && node --check ./src/adapters/cursor/read.js && node --check ./src/adapters/cursor/write.js && node --check ./src/operations/copy-thread.js && node --check ./src/operations/convert-thread.js && node --check ./test/cli.test.js",
     "test": "node --test ./test/cli.test.js"
   },
   "engines": {

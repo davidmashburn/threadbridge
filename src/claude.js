@@ -15,9 +15,8 @@ function walkSessions(rootDir) {
     return [];
   }
 
-  const stack = [rootDir];
   const results = [];
-
+  const stack = [rootDir];
   while (stack.length > 0) {
     const current = stack.pop();
     const entries = fs.readdirSync(current, { withFileTypes: true });

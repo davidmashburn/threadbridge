@@ -2,9 +2,6 @@ const path = require("path");
 const os = require("os");
 const { DatabaseSync } = require("node:sqlite");
 const {
-  copyThreadBetweenT3Dbs,
-  resolveThreadTarget,
-  copyThreadToNewWorkspace,
   DEFAULT_BUSY_TIMEOUT_MS,
   DEFAULT_LOCK_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
@@ -12,41 +9,20 @@ const {
 const {
   DEFAULT_CODEX_ROOT,
   listCodexSessions,
-  copyCodexSession,
-  resolveCodexSessionTarget,
-  parseCodexSession,
 } = require("./codex");
-const {
-  importCodexIntoT3,
-  buildT3Export,
-  generateCodexSessionFromT3,
-} = require("./bridge");
 const {
   DEFAULT_CLAUDE_ROOT,
   listClaudeSessions,
-  resolveClaudeSession,
-  parseClaudeSession,
-  parseClaudeSessionWithContext,
-  copyClaudeSession,
-  exportT3ToClaudeFormat,
 } = require("./claude");
 const {
-  DEFAULT_CURSOR_ROOT,
   listCursorChats,
-  resolveCursorChat,
-  parseCursorChat,
-  buildCursorExport,
-  generateCursorSessionFromT3,
-  importCursorIntoT3,
 } = require("./cursor");
 const {
   DEFAULT_OPENCODE_ROOT,
   listOpenCodeSessions,
-  resolveOpenCodeSessionTarget,
-  parseOpenCodeSession,
-  copyOpenCodeSession,
-  generateOpenCodeSessionFromT3,
 } = require("./opencode");
+const { copyThread } = require("./operations/copy-thread");
+const { convertThread } = require("./operations/convert-thread");
 
 const DEFAULT_T3_DB_PATH = path.join(os.homedir(), ".t3", "userdata", "state.sqlite");
 const DEFAULT_T3_SOURCE_DB_PATH = path.join(os.homedir(), ".t3", "dev", "state.sqlite");
@@ -251,6 +227,13 @@ function parseArgs(argv) {
 
   if (command !== "list") {
     args.target = positionals[0] || "last";
+  } else if (adapter === "claude") {
+    if (positionals.length > 1) {
+      fail("`claude list` accepts at most one PROJECT_PATH positional.");
+    }
+    if (positionals.length === 1) {
+      args.projectPath = positionals[0];
+    }
   } else if (positionals.length > 0) {
     fail("`list` does not accept a target.");
   }
@@ -364,7 +347,9 @@ function runCli(argv) {
     }
 
     if (args.adapter === "t3" && args.command === "copy") {
-      const result = copyThreadBetweenT3Dbs({
+      const receipt = copyThread({
+        sourceHarness: "t3",
+        targetHarness: "t3",
         sourceDbPath: args.sourceDbPath,
         targetDbPath: args.dbPath,
         target: args.target,
@@ -375,14 +360,15 @@ function runCli(argv) {
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "clone-thread",
       });
-      process.stdout.write(`Copied thread ${result.sourceThreadId} -> ${result.newThreadId}\n`);
-      process.stdout.write(`Title: ${result.title}\n`);
-      process.stdout.write(`Source DB: ${result.sourceDbPath}\n`);
-      process.stdout.write(`Target DB: ${result.targetDbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(`Copied thread ${receipt.source.id} -> ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Source DB: ${receipt.source.path}\n`);
+      process.stdout.write(`Target DB: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
       process.stdout.write(
-        `Copied rows: messages=${result.counts.messages}, turns=${result.counts.turns}, activities=${result.counts.activities}, proposedPlans=${result.counts.proposedPlans}\n`,
+        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans || 0}\n`,
       );
       return;
     }
@@ -391,33 +377,39 @@ function runCli(argv) {
       if (!args.newProjectId) {
         fail("--new-project-id is required for copy-to-workspace");
       }
-      const result = copyThreadToNewWorkspace({
-        dbPath: args.dbPath,
+      const receipt = copyThread({
+        sourceHarness: "t3",
+        targetHarness: "t3",
+        sourceDbPath: args.dbPath,
+        targetDbPath: args.dbPath,
         target: args.target,
+        newThreadId: args.newThreadId,
         newProjectId: args.newProjectId,
         newProvider: args.newProvider,
         newModel: args.newModel,
         newModelSelection: args.newModelSelection,
         title: args.title,
-        newThreadId: args.newThreadId,
         copyRuntime: args.copyRuntime,
         backup: args.backup,
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "copy-to-workspace",
       });
-      process.stdout.write(`Copied thread ${result.sourceThreadId} -> ${result.newThreadId}\n`);
-      process.stdout.write(`Title: ${result.title}\n`);
-      process.stdout.write(`DB: ${result.dbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
+      process.stdout.write(`Copied thread ${receipt.source.id} -> ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`DB: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
       process.stdout.write(
-        `Copied rows: messages=${result.counts.messages}, turns=${result.counts.turns}, activities=${result.counts.activities}, proposedPlans=${result.counts.proposedPlans}\n`,
+        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans || 0}\n`,
       );
       return;
     }
 
     if (args.adapter === "codex" && args.command === "copy") {
-      const result = copyCodexSession({
+      const receipt = copyThread({
+        sourceHarness: "codex",
+        targetHarness: "codex",
         sourceRoot: args.root,
         targetRoot: args.destRoot,
         target: args.target,
@@ -425,22 +417,20 @@ function runCli(argv) {
         newSessionId: args.newSessionId,
       });
       process.stdout.write(
-        `Copied Codex session ${result.sourceSessionId} -> ${result.sessionId}\n`,
+        `Copied Codex session ${receipt.source.id} -> ${receipt.createdIds.sessionId}\n`,
       );
-      process.stdout.write(`Source file: ${result.sourceFile}\n`);
-      process.stdout.write(`Target file: ${result.targetFile}\n`);
+      process.stdout.write(`Source file: ${receipt.source.path}\n`);
+      process.stdout.write(`Target file: ${receipt.target.path}\n`);
       return;
     }
 
     if (args.adapter === "codex" && args.command === "to-t3") {
-      const sourceFile = resolveCodexSessionTarget({
+      const receipt = convertThread({
+        sourceHarness: "codex",
+        targetHarness: "t3",
         root: args.root,
         target: args.target,
         includeBoilerplate: args.includeBoilerplate,
-      });
-      const codexSession = parseCodexSession(sourceFile, args.includeBoilerplate);
-      const result = importCodexIntoT3({
-        codexSession,
         dbPath: args.dbPath,
         title: args.title,
         projectId: args.projectId,
@@ -449,104 +439,94 @@ function runCli(argv) {
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "import-session",
       });
-      process.stdout.write(`Imported Codex session ${codexSession.sessionId} into T3.\n`);
-      process.stdout.write(`Thread ID: ${result.threadId}\n`);
-      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
-      process.stdout.write(`Database: ${result.dbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
-      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
-      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      process.stdout.write(`Imported Codex session ${receipt.source.id} into T3.\n`);
+      process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Database: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${receipt.counts.messages || 0}\n`);
+      process.stdout.write(`Imported turns: ${receipt.counts.turns || 0}\n`);
       return;
     }
 
     if (args.adapter === "t3" && args.command === "to-codex") {
-      const sourceThreadId = resolveThreadTarget({
-        sourceDbPath: args.dbPath,
+      const receipt = convertThread({
+        sourceHarness: "t3",
+        targetHarness: "codex",
+        dbPath: args.dbPath,
         target: args.target,
+        root: args.root,
+        newSessionId: args.newSessionId,
+        intent: "export-session",
       });
-
-      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
-      const result = generateCodexSessionFromT3({
-        t3Thread: t3Export,
-        targetRoot: args.root,
-        sessionId: args.newSessionId,
-      });
-      process.stdout.write(`Exported T3 thread ${result.sourceThreadId} to Codex session.\n`);
-      process.stdout.write(`Session ID: ${result.sessionId}\n`);
-      process.stdout.write(`Output file: ${result.outputPath}\n`);
-      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      process.stdout.write(`Exported T3 thread ${receipt.source.id} to Codex session.\n`);
+      process.stdout.write(`Session ID: ${receipt.createdIds.sessionId}\n`);
+      process.stdout.write(`Output file: ${receipt.target.path}\n`);
+      process.stdout.write(`Messages exported: ${receipt.counts.messages || 0}\n`);
       return;
     }
 
     if (args.adapter === "t3" && args.command === "to-claude") {
-      const sourceThreadId = resolveThreadTarget({
-        sourceDbPath: args.dbPath,
+      const receipt = convertThread({
+        sourceHarness: "t3",
+        targetHarness: "claude",
+        dbPath: args.dbPath,
         target: args.target,
-      });
-
-      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
-      const result = exportT3ToClaudeFormat({
-        t3Thread: t3Export,
-        targetRoot: args.projectPath,
         projectPath: args.projectPath,
+        intent: "export-session",
       });
       process.stdout.write(`Exported T3 thread to Claude session.\n`);
-      process.stdout.write(`Session ID: ${result.sessionId}\n`);
-      process.stdout.write(`Output file: ${result.outputPath}\n`);
-      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      process.stdout.write(`Session ID: ${receipt.createdIds.sessionId}\n`);
+      process.stdout.write(`Output file: ${receipt.target.path}\n`);
+      process.stdout.write(`Messages exported: ${receipt.counts.messages || 0}\n`);
       return;
     }
 
     if (args.adapter === "t3" && args.command === "to-cursor") {
-      const sourceThreadId = resolveThreadTarget({
-        sourceDbPath: args.dbPath,
+      const receipt = convertThread({
+        sourceHarness: "t3",
+        targetHarness: "cursor",
+        dbPath: args.dbPath,
         target: args.target,
-      });
-
-      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
-      const result = generateCursorSessionFromT3({
-        t3Thread: t3Export,
-        chatId: args.newChatId,
+        newChatId: args.newChatId,
+        intent: "export-session",
       });
       process.stdout.write(`Exported T3 thread to Cursor chat.\n`);
-      process.stdout.write(`Chat ID: ${result.chatId}\n`);
-      process.stdout.write(`Chat directory: ${result.chatDir}\n`);
-      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      process.stdout.write(`Chat ID: ${receipt.createdIds.chatId}\n`);
+      process.stdout.write(`Chat directory: ${receipt.target.path}\n`);
+      process.stdout.write(`Messages exported: ${receipt.counts.messages || 0}\n`);
       return;
     }
 
     if (args.adapter === "t3" && args.command === "to-opencode") {
-      const sourceThreadId = resolveThreadTarget({
-        sourceDbPath: args.dbPath,
+      const receipt = convertThread({
+        sourceHarness: "t3",
+        targetHarness: "opencode",
+        dbPath: args.dbPath,
         target: args.target,
-      });
-
-      const t3Export = buildT3Export(sourceThreadId, args.dbPath);
-      const result = generateOpenCodeSessionFromT3({
-        t3Thread: t3Export,
-        targetRoot: args.opencodeRoot,
+        opencodeRoot: args.opencodeRoot,
+        intent: "export-session",
       });
       process.stdout.write(`Exported T3 thread to OpenCode session.\n`);
-      process.stdout.write(`Session ID: ${result.sessionId}\n`);
-      process.stdout.write(`Session path: ${result.sessionPath}\n`);
-      process.stdout.write(`Messages exported: ${result.messageCount}\n`);
+      process.stdout.write(`Session ID: ${receipt.createdIds.sessionId}\n`);
+      process.stdout.write(`Session path: ${receipt.target.path}\n`);
+      process.stdout.write(`Messages exported: ${receipt.counts.messages || 0}\n`);
+      return;
+    }
+
+    if (args.adapter === "claude" && args.command === "list") {
+      runClaudeList(args);
       return;
     }
 
     if (args.adapter === "claude" && args.command === "to-t3") {
-      const sourceFile = resolveClaudeSession(args.projectPath, args.target);
-      const claudeSession = parseClaudeSessionWithContext(sourceFile);
-      const result = importCodexIntoT3({
-        codexSession: {
-          sessionId: claudeSession.sessionId,
-          transcript: claudeSession.transcript,
-          model: claudeSession.model || "claude-sonnet-4-20250514",
-          originalCwd: claudeSession.originalCwd,
-          reasoningEffort: null,
-          interactionMode: "default",
-          runtimeMode: "approval-required",
-        },
+      const receipt = convertThread({
+        sourceHarness: "claude",
+        targetHarness: "t3",
+        projectPath: args.projectPath,
+        target: args.target,
         dbPath: args.dbPath,
         title: args.title,
         projectId: args.projectId,
@@ -555,31 +535,32 @@ function runCli(argv) {
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "import-session",
       });
-      process.stdout.write(`Imported Claude session ${claudeSession.sessionId} into T3.\n`);
-      process.stdout.write(`Thread ID: ${result.threadId}\n`);
-      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
-      process.stdout.write(`Database: ${result.dbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
-      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
-      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      process.stdout.write(`Imported Claude session ${receipt.source.id} into T3.\n`);
+      process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Database: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${receipt.counts.messages || 0}\n`);
+      process.stdout.write(`Imported turns: ${receipt.counts.turns || 0}\n`);
       return;
     }
 
     if (args.adapter === "claude" && args.command === "copy") {
-      const result = copyClaudeSession({
+      const receipt = copyThread({
+        sourceHarness: "claude",
+        targetHarness: "claude",
+        projectPath: args.projectPath,
+        destProjectPath: args.destProjectPath,
         target: args.target,
-        sourceRoot: args.projectPath,
-        targetRoot: args.destProjectPath,
-        sourceProject: args.projectPath,
-        targetProject: args.destProjectPath,
         newSessionId: args.newSessionId,
       });
       process.stdout.write(
-        `Copied Claude session ${result.sourceSessionId} -> ${result.sessionId}\n`,
+        `Copied Claude session ${receipt.source.id} -> ${receipt.createdIds.sessionId}\n`,
       );
-      process.stdout.write(`Source file: ${result.sourceFile}\n`);
-      process.stdout.write(`Target file: ${result.targetFile}\n`);
+      process.stdout.write(`Source file: ${receipt.source.path}\n`);
+      process.stdout.write(`Target file: ${receipt.target.path}\n`);
       return;
     }
 
@@ -589,10 +570,10 @@ function runCli(argv) {
     }
 
     if (args.adapter === "cursor" && args.command === "to-t3") {
-      const chatId = resolveCursorChat(args.target);
-      const chat = parseCursorChat(chatId);
-      const result = importCursorIntoT3({
-        cursorChatId: chatId,
+      const receipt = convertThread({
+        sourceHarness: "cursor",
+        targetHarness: "t3",
+        target: args.target,
         dbPath: args.dbPath,
         title: args.title,
         projectId: args.projectId,
@@ -601,15 +582,15 @@ function runCli(argv) {
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "import-session",
       });
-      const sourceLabel = chat.source === "composer" ? "Cursor Composer thread" : "Cursor ACP chat";
-      process.stdout.write(`Imported ${sourceLabel} ${chat.chatId} into T3.\n`);
-      process.stdout.write(`Thread ID: ${result.threadId}\n`);
-      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
-      process.stdout.write(`Database: ${result.dbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
-      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
-      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      process.stdout.write(`Imported Cursor session ${receipt.source.id} into T3.\n`);
+      process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Database: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${receipt.counts.messages || 0}\n`);
+      process.stdout.write(`Imported turns: ${receipt.counts.turns || 0}\n`);
       return;
     }
 
@@ -619,36 +600,28 @@ function runCli(argv) {
     }
 
     if (args.adapter === "opencode" && args.command === "copy") {
-      const result = copyOpenCodeSession({
+      const receipt = copyThread({
+        sourceHarness: "opencode",
+        targetHarness: "opencode",
         sourceRoot: args.opencodeRoot,
         targetRoot: args.destOpenCodeRoot,
         target: args.target,
         newSessionId: args.newOpenCodeSessionId,
       });
       process.stdout.write(
-        `Copied OpenCode session ${result.sourceSessionId} -> ${result.sessionId}\n`,
+        `Copied OpenCode session ${receipt.source.id} -> ${receipt.createdIds.sessionId}\n`,
       );
-      process.stdout.write(`Source file: ${result.sourceFile}\n`);
-      process.stdout.write(`Target file: ${result.targetFile}\n`);
+      process.stdout.write(`Source file: ${receipt.source.path}\n`);
+      process.stdout.write(`Target file: ${receipt.target.path}\n`);
       return;
     }
 
     if (args.adapter === "opencode" && args.command === "to-t3") {
-      const sourceFile = resolveOpenCodeSessionTarget({
-        root: args.opencodeRoot,
+      const receipt = convertThread({
+        sourceHarness: "opencode",
+        targetHarness: "t3",
+        opencodeRoot: args.opencodeRoot,
         target: args.target,
-      });
-      const opencodeSession = parseOpenCodeSession(sourceFile, { root: args.opencodeRoot });
-      const result = importCodexIntoT3({
-        codexSession: {
-          sessionId: opencodeSession.sessionId,
-          transcript: opencodeSession.transcript,
-          model: opencodeSession.model || "kimi-k2.5-free",
-          originalCwd: opencodeSession.originalCwd,
-          reasoningEffort: null,
-          interactionMode: "default",
-          runtimeMode: "approval-required",
-        },
         dbPath: args.dbPath,
         title: args.title,
         projectId: args.projectId,
@@ -657,14 +630,15 @@ function runCli(argv) {
         busyTimeoutMs: args.busyTimeoutMs,
         lockRetries: args.lockRetries,
         retryDelayMs: args.retryDelayMs,
+        intent: "import-session",
       });
-      process.stdout.write(`Imported OpenCode session ${opencodeSession.sessionId} into T3.\n`);
-      process.stdout.write(`Thread ID: ${result.threadId}\n`);
-      process.stdout.write(`Thread title: ${result.threadTitle}\n`);
-      process.stdout.write(`Database: ${result.dbPath}\n`);
-      if (result.backupPath) process.stdout.write(`Backup: ${result.backupPath}\n`);
-      process.stdout.write(`Imported messages: ${result.messageCount}\n`);
-      process.stdout.write(`Imported turns: ${result.turnCount}\n`);
+      process.stdout.write(`Imported OpenCode session ${receipt.source.id} into T3.\n`);
+      process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Database: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${receipt.counts.messages || 0}\n`);
+      process.stdout.write(`Imported turns: ${receipt.counts.turns || 0}\n`);
       return;
     }
 
