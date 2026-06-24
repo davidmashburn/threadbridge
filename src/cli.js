@@ -31,6 +31,7 @@ const DEFAULT_LIST_LIMIT = 10;
 function usage() {
   return `Usage:
   threadbridge t3 list [--db-path PATH] [--limit N]
+  threadbridge t3 search QUERY [--db-path PATH] [--limit N]
   threadbridge t3 copy [THREAD_ID|last] [--source-db-path PATH] [--db-path PATH] [--new-thread-id ID] [--title TEXT] [--copy-runtime] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   threadbridge t3 copy-to-workspace [THREAD_ID|last] [--db-path PATH] [--new-project-id ID] [--new-provider PROVIDER] [--new-model MODEL] [--new-model-selection JSON] [--title TEXT] [--new-thread-id ID] [--copy-runtime] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   threadbridge t3 to-codex [THREAD_ID|last] [--db-path PATH] [--root DIR] [--new-session-id ID]
@@ -39,19 +40,23 @@ function usage() {
   threadbridge t3 to-opencode [THREAD_ID|last] [--db-path PATH] [--root DIR] [--opencode-root DIR]
 
   threadbridge codex list [--root DIR] [--limit N] [--include-boilerplate]
+  threadbridge codex search QUERY [--root DIR] [--limit N] [--include-boilerplate]
   threadbridge codex copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge codex to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
   threadbridge claude list [PROJECT_PATH] [--limit N]
+  threadbridge claude search QUERY [PROJECT_PATH] [--limit N]
   threadbridge claude copy [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--dest-project-path DIR] [--new-session-id ID]
   threadbridge claude to-t3 [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
   threadbridge cursor list [--limit N]
+  threadbridge cursor search QUERY [--limit N]
   threadbridge cursor copy [CHAT_ID|last] [--dest-chat-id ID]
   threadbridge cursor to-t3 [CHAT_ID|COMPOSER_ID|last] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   (cursor list shows both ACP sessions [acp] and Composer threads [composer])
 
   threadbridge opencode list [--root DIR] [--limit N]
+  threadbridge opencode search QUERY [--root DIR] [--limit N]
   threadbridge opencode copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge opencode to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
@@ -121,6 +126,7 @@ function parseArgs(argv) {
     copyRuntime: false,
     includeBoilerplate: false,
     backup: true,
+    query: null,
     busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS,
     lockRetries: DEFAULT_LOCK_RETRIES,
     retryDelayMs: DEFAULT_RETRY_DELAY_MS,
@@ -204,11 +210,11 @@ function parseArgs(argv) {
     positionals.push(token);
   }
 
-  const validT3 = ["list", "copy", "copy-to-workspace", "to-codex", "to-claude", "to-cursor", "to-opencode"];
-  const validCodex = ["list", "copy", "to-t3"];
-  const validClaude = ["list", "copy", "to-t3"];
-  const validCursor = ["list", "copy", "to-t3"];
-  const validOpenCode = ["list", "copy", "to-t3"];
+  const validT3 = ["list", "search", "copy", "copy-to-workspace", "to-codex", "to-claude", "to-cursor", "to-opencode"];
+  const validCodex = ["list", "search", "copy", "to-t3"];
+  const validClaude = ["list", "search", "copy", "to-t3"];
+  const validCursor = ["list", "search", "copy", "to-t3"];
+  const validOpenCode = ["list", "search", "copy", "to-t3"];
   if (adapter === "t3" && !validT3.includes(command)) {
     fail(`Unsupported t3 command '${command}'.`);
   }
@@ -225,7 +231,17 @@ function parseArgs(argv) {
     fail(`Unsupported opencode command '${command}'.`);
   }
 
-  if (command !== "list") {
+  if (command === "search") {
+    if (positionals.length === 0) {
+      fail("`search` requires a QUERY argument.");
+    }
+    args.query = positionals[0];
+    if (adapter === "claude" && positionals.length > 1) {
+      args.projectPath = positionals[1];
+    } else if (adapter !== "claude" && positionals.length > 1) {
+      fail("`search` accepts only one positional argument (QUERY).");
+    }
+  } else if (command !== "list") {
     args.target = positionals[0] || "last";
   } else if (adapter === "claude") {
     if (positionals.length > 1) {
@@ -325,6 +341,102 @@ function runOpenCodeList({ opencodeRoot, limit }) {
   }
 }
 
+function matchesQuery(text, query) {
+  return String(text || "").toLowerCase().includes(query.toLowerCase());
+}
+
+function runT3Search({ dbPath, limit, query }) {
+  const db = new DatabaseSync(dbPath);
+  try {
+    const pattern = `%${query}%`;
+    const rows = db
+      .prepare(`
+        SELECT
+          threads.thread_id AS threadId,
+          threads.title AS title,
+          threads.created_at AS createdAt,
+          projects.title AS projectTitle,
+          projects.workspace_root AS workspaceRoot
+        FROM projection_threads AS threads
+        LEFT JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE threads.deleted_at IS NULL
+          AND LOWER(threads.title) LIKE LOWER(?)
+        ORDER BY threads.created_at DESC, threads.thread_id DESC
+        LIMIT ?
+      `)
+      .all(pattern, limit);
+
+    for (const row of rows) {
+      process.stdout.write(`${row.createdAt}  ${row.threadId}\n`);
+      process.stdout.write(`  title: ${row.title}\n`);
+      if (row.projectTitle || row.workspaceRoot) {
+        process.stdout.write(
+          `  project: ${row.projectTitle || "(unknown)"}${row.workspaceRoot ? `  [${row.workspaceRoot}]` : ""}\n`,
+        );
+      }
+      process.stdout.write("\n");
+    }
+  } finally {
+    db.close();
+  }
+}
+
+function runCodexSearch({ root, limit, query, includeBoilerplate }) {
+  const all = listCodexSessions({ root, limit: 99999, includeBoilerplate });
+  const matches = all.filter((s) => matchesQuery(s.prompt, query)).slice(0, limit);
+  for (const session of matches) {
+    process.stdout.write(`${session.startedAt}  ${session.id}\n`);
+    if (session.cwd) process.stdout.write(`  cwd: ${session.cwd}\n`);
+    if (session.model) process.stdout.write(`  model: ${session.model}\n`);
+    process.stdout.write(`  prompt: ${session.prompt}\n`);
+    process.stdout.write(`  file: ${session.filePath}\n\n`);
+  }
+}
+
+function runClaudeSearch({ projectPath, limit, query }) {
+  const all = listClaudeSessions(projectPath || process.cwd(), { limit: 99999 });
+  const matches = all.filter((s) => matchesQuery(s.prompt, query)).slice(0, limit);
+  for (const session of matches) {
+    process.stdout.write(`${session.startedAt}  ${session.id}\n`);
+    if (session.workingDir) process.stdout.write(`  cwd: ${session.workingDir}\n`);
+    process.stdout.write(`  prompt: ${session.prompt}\n`);
+    process.stdout.write(`  file: ${session.filePath}\n\n`);
+  }
+}
+
+function runCursorSearch({ limit, query }) {
+  const all = listCursorChats({ limit: 99999 });
+  const matches = all.filter((c) => matchesQuery(c.title, query)).slice(0, limit);
+  for (const chat of matches) {
+    const source = chat.source || "acp";
+    const ts = (chat.lastAt || chat.createdAt) || "unknown";
+    process.stdout.write(`${ts}  ${chat.chatId}  [${source}]\n`);
+    process.stdout.write(`  title: ${chat.title}\n`);
+    if (source === "composer") {
+      process.stdout.write(`  turns: ${chat.userCount} user / ${chat.aiCount} ai  (${chat.messageCount} substantive)\n`);
+    } else {
+      process.stdout.write(`  messages: ${chat.messageCount}\n`);
+      if (chat.chatDir) process.stdout.write(`  dir: ${chat.chatDir}\n`);
+    }
+    process.stdout.write("\n");
+  }
+}
+
+function runOpenCodeSearch({ opencodeRoot, limit, query }) {
+  const all = listOpenCodeSessions({ root: opencodeRoot, limit: 99999 });
+  const matches = all
+    .filter((s) => matchesQuery(s.title, query) || matchesQuery(s.slug, query))
+    .slice(0, limit);
+  for (const session of matches) {
+    process.stdout.write(`${session.createdAt || "unknown"}  ${session.sessionId}\n`);
+    if (session.directory) process.stdout.write(`  cwd: ${session.directory}\n`);
+    process.stdout.write(`  title: ${session.title}\n`);
+    process.stdout.write(`  slug: ${session.slug}\n`);
+    process.stdout.write(`  file: ${session.filePath}\n\n`);
+  }
+}
+
 function runCli(argv) {
   try {
     const args = parseArgs(argv);
@@ -343,6 +455,27 @@ function runCli(argv) {
     }
     if (args.adapter === "cursor" && args.command === "list") {
       runCursorList(args);
+      return;
+    }
+
+    if (args.adapter === "t3" && args.command === "search") {
+      runT3Search(args);
+      return;
+    }
+    if (args.adapter === "codex" && args.command === "search") {
+      runCodexSearch(args);
+      return;
+    }
+    if (args.adapter === "claude" && args.command === "search") {
+      runClaudeSearch(args);
+      return;
+    }
+    if (args.adapter === "cursor" && args.command === "search") {
+      runCursorSearch(args);
+      return;
+    }
+    if (args.adapter === "opencode" && args.command === "search") {
+      runOpenCodeSearch(args);
       return;
     }
 
