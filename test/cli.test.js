@@ -256,8 +256,7 @@ test("show --json emits canonical Threadbridge IR", () => {
 test("--json formats CLI failures for programmatic handling", () => {
   const result = runCliProcess(["unknown", "list", "--json"]);
   assert.equal(result.status, 1);
-  assert.equal(result.stdout, "");
-  const output = JSON.parse(result.stderr);
+  const output = JSON.parse(result.stdout);
   assert.equal(output.ok, false);
   assert.match(output.error.message, /Unsupported adapter/);
 });

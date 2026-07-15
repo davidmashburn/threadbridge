@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T08:00:00Z
-modified_at: 2026-07-15T01:18:18Z
+modified_at: 2026-07-15T04:48:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -61,7 +61,7 @@ Every command accepts `--json`. Successful commands write one JSON object to std
 }
 ```
 
-Failures exit non-zero and write `{ "ok": false, "error": { "message": "..." } }` to stderr. List and search commands return arrays in `data`; copy and conversion commands return operation receipts with source, target, created IDs, counts, warnings, and backup path.
+Failures exit non-zero and write `{ "ok": false, "error": { "message": "..." } }` to stdout as well, keeping the JSON channel reliable even when the Node runtime emits warnings on stderr. List and search commands return arrays in `data`; copy and conversion commands return operation receipts with source, target, created IDs, counts, warnings, and backup path.
 
 Use `show --json` to read a complete thread in the versioned, harness-neutral Threadbridge IR without changing anything:
 

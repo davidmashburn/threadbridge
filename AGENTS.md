@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-07-15T01:18:18Z
-modified_at: 2026-07-15T01:18:18Z
+modified_at: 2026-07-15T04:48:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -9,7 +9,7 @@ approved_by:
 repo: https://github.com/davidmashburn/threadbridge
 branch: main
 repo_branch_url: https://github.com/davidmashburn/threadbridge/tree/main
-repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/cf2fd573366617324c67ae5f382a16b09911d8a6
+repo_head_commit_url: https://github.com/davidmashburn/threadbridge/commit/a4bcda821c8974a9e2ff559dd62b286ca560de27
 ---
 
 # Agent guide
@@ -38,4 +38,4 @@ npm test
 ./bin/threadbridge.js codex show <session-id> --root ~/.codex/sessions --json
 ```
 
-Successful JSON commands emit one object to stdout. Failures exit non-zero and emit a JSON error object to stderr when `--json` is present.
+JSON commands emit one object to stdout for both success and failure. Failures also exit non-zero; ignore unrelated runtime warnings on stderr.

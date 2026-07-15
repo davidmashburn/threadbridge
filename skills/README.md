@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:55:00Z
-modified_at: 2026-07-15T01:18:18Z
+modified_at: 2026-07-15T04:48:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -44,7 +44,7 @@ threadbridge t3 search "<query>" --db-path ~/.t3/userdata/state.sqlite --json
 threadbridge t3 show <THREAD_ID> --db-path ~/.t3/userdata/state.sqlite --json
 ```
 
-Successful output is `{ "ok": true, "command": "...", "data": ... }`. Failures exit non-zero and emit `{ "ok": false, "error": { "message": "..." } }` on stderr. Do not scrape the human-readable format.
+Successful output is `{ "ok": true, "command": "...", "data": ... }`. Failures exit non-zero and emit `{ "ok": false, "error": { "message": "..." } }` on stdout. Do not scrape the human-readable format or stderr warnings.
 
 ### Provider Conversion (All Skills)
 ```bash

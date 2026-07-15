@@ -80,7 +80,7 @@ Defaults:
   --retry-delay-ms  ${DEFAULT_RETRY_DELAY_MS}
 
 Global output:
-  --json           Emit a stable JSON envelope on stdout; errors use stderr
+  --json           Emit a stable JSON envelope on stdout, including errors
 `;
 }
 
@@ -944,7 +944,7 @@ function runCli(argv) {
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     if (argv.includes("--json")) {
-      process.stderr.write(`${JSON.stringify({ ok: false, error: { message } }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ok: false, error: { message } }, null, 2)}\n`);
     } else {
       process.stderr.write(`${message}\n`);
     }
