@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:58:00Z
-modified_at: 2026-04-22T09:58:00Z
+modified_at: 2026-07-15T01:18:18Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -28,6 +28,8 @@ Use this skill when the user asks to:
 - diagnose missing recovered thread entries after copy
 
 ## Command Mapping
+
+For agent-driven reads, append `--json`. Use `search` to resolve an exact ID and `show <ID> --json` to inspect canonical IR before proposing a write. Parse the JSON envelope instead of human-readable output.
 
 - List threads:
   - `threadbridge t3 list --db-path ~/.t3/userdata/state.sqlite --limit <N>`

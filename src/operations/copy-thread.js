@@ -8,6 +8,8 @@ const { readClaudeSessionAsIr } = require("../adapters/claude/read");
 const { writeIrToClaude } = require("../adapters/claude/write");
 const { readOpenCodeSessionAsIr } = require("../adapters/opencode/read");
 const { writeIrToOpenCode } = require("../adapters/opencode/write");
+const { readCursorChatAsIr } = require("../adapters/cursor/read");
+const { writeIrToCursor } = require("../adapters/cursor/write");
 
 function copyThread(args) {
   const intent = normalizeWriteIntent(args.intent || "clone-thread", args);
@@ -66,6 +68,11 @@ function copyThread(args) {
       targetRoot: args.targetRoot,
       sessionId: args.newSessionId || null,
     });
+  }
+
+  if (args.sourceHarness === "cursor" && args.targetHarness === "cursor") {
+    const ir = readCursorChatAsIr({ target: args.target });
+    return writeIrToCursor({ ir, chatId: args.newChatId || null });
   }
 
   return createOperationReceipt({

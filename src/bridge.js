@@ -1,4 +1,5 @@
-const { createIrFromTranscriptSession } = require("./ir");
+const { createIrFromTranscriptSession, mapMessagesToTurns } = require("./ir");
+const { withLockRetries } = require("./t3-copy");
 const { readT3ThreadAsIr } = require("./adapters/t3/read");
 const { writeIrToT3 } = require("./adapters/t3/write");
 const { writeIrToCodex } = require("./adapters/codex/write");
@@ -25,7 +26,7 @@ function importCodexIntoT3({
     reasoningEffort: codexSession.reasoningEffort || null,
     interactionMode: codexSession.interactionMode || "default",
     runtimeMode: codexSession.runtimeMode || "approval-required",
-    title: title || codexSession.title || codexSession.sessionId,
+    title: title || codexSession.title || null,
   });
 
   const receipt = writeIrToT3({
@@ -115,7 +116,7 @@ function generateCodexSessionFromT3({
 
 module.exports = {
   importCodexIntoT3,
-  mapTranscriptToTurns,
+  mapTranscriptToTurns: mapMessagesToTurns,
   buildT3Export,
   generateCodexSessionFromT3,
   withLockRetries,

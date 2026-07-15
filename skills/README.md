@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:55:00Z
-modified_at: 2026-05-01T03:30:00Z
+modified_at: 2026-07-15T01:18:18Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -34,6 +34,17 @@ All skills now support **provider conversion** using the new `t3 copy-to-workspa
 - Example: Convert Codex thread to T3 with different workspace/project
 
 ## Common Operations
+
+### Agent-readable discovery
+
+Prefer `--json` for all agent-driven commands. Use `search` to resolve a specific source and `show --json` to inspect its canonical IR before proposing a write:
+
+```bash
+threadbridge t3 search "<query>" --db-path ~/.t3/userdata/state.sqlite --json
+threadbridge t3 show <THREAD_ID> --db-path ~/.t3/userdata/state.sqlite --json
+```
+
+Successful output is `{ "ok": true, "command": "...", "data": ... }`. Failures exit non-zero and emit `{ "ok": false, "error": { "message": "..." } }` on stderr. Do not scrape the human-readable format.
 
 ### Provider Conversion (All Skills)
 ```bash

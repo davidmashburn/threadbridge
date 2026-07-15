@@ -331,10 +331,10 @@ function getTranscriptEntriesFromIr(ir, { includeSystem = false } = {}) {
 module.exports = {
   createThreadbridgeIr,
   createIrFromTranscriptSession,
+  mapMessagesToTurns,
   deriveTitleFromMessages,
   extractPlainTextFromBlocks,
   getTranscriptEntriesFromIr,
-  mapMessagesToTurns,
   normalizeContentBlocks,
   normalizeRole,
   parseMaybeJson,

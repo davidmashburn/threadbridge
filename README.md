@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T08:00:00Z
-modified_at: 2026-04-22T09:05:00Z
+modified_at: 2026-07-15T01:18:18Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -14,6 +14,8 @@ approved_by:
 
 Current scope:
 - `t3 list`: list recent threads in a T3 SQLite DB
+- `<harness> search`: find sessions by title or prompt; T3 also searches message bodies
+- `<harness> show`: inspect a thread as a transcript or canonical Threadbridge IR
 - `t3 copy`: copy one thread from a source T3 DB to a target T3 DB as a new thread ID
 - `t3 copy-to-workspace`: copy a thread to a new workspace/project within the same DB with optional provider change
 - `t3 to-codex`: export one T3 thread into a Codex session file
@@ -24,8 +26,9 @@ Current scope:
 - `codex copy`: copy one Codex session to another Codex root as a new session ID
 - `codex to-t3`: import one Codex session into T3 as a new thread
 - `claude list|copy|to-t3`: inspect, duplicate, and import Claude sessions
-- `cursor list|to-t3`: inspect and import Cursor ACP/Composer chats
+- `cursor list|copy|to-t3`: inspect, duplicate, and import Cursor ACP/Composer chats
 - `opencode list|copy|to-t3`: inspect, duplicate, and import OpenCode sessions
+- `--json`: return stable success/error envelopes for agent and script integration
 
 The T3 copy/import flows are designed for live usage while T3 is open:
 - SQLite `busy_timeout`
@@ -45,6 +48,37 @@ Prerequisites:
 - `sqlite3` available on `PATH` for backup-enabled T3 import/copy flows
 
 ## Usage
+
+### Agent and script usage
+
+Every command accepts `--json`. Successful commands write one JSON object to stdout:
+
+```json
+{
+  "ok": true,
+  "command": "codex list",
+  "data": []
+}
+```
+
+Failures exit non-zero and write `{ "ok": false, "error": { "message": "..." } }` to stderr. List and search commands return arrays in `data`; copy and conversion commands return operation receipts with source, target, created IDs, counts, warnings, and backup path.
+
+Use `show --json` to read a complete thread in the versioned, harness-neutral Threadbridge IR without changing anything:
+
+```bash
+./bin/threadbridge.js codex show last --root ~/.codex/sessions --json
+./bin/threadbridge.js t3 show <thread-id> --db-path ~/.t3/userdata/state.sqlite --json
+./bin/threadbridge.js claude show last --project-path ~/src/my-project --json
+```
+
+The IR includes `schemaVersion`, source metadata, thread/project metadata, normalized content blocks, messages, turns, activities, plans, runtime capabilities, warnings, and adapter extensions. T3 runtime bindings remain excluded unless `--copy-runtime` is explicitly supplied.
+
+Search before choosing a target instead of relying on `last`:
+
+```bash
+./bin/threadbridge.js t3 search "PLAT-403" --db-path ~/.t3/userdata/state.sqlite --json
+./bin/threadbridge.js codex search "persistence" --root ~/.codex/sessions --json
+```
 
 List T3 threads:
 
@@ -164,6 +198,7 @@ Optional flags:
 - `--new-thread-id <uuid>`: set target thread ID manually
 - `--copy-runtime`: also copy session/runtime rows
 - `--no-backup`: skip automatic backup
+- `--json`: emit machine-readable output (available on every command)
 
 ## Notes
 

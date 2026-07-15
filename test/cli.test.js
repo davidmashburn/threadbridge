@@ -3,8 +3,9 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
-const { parseArgs } = require("../src/cli");
+const { formatMatchExcerpt, parseArgs, searchT3Threads } = require("../src/cli");
 const { copyCodexSession, listCodexSessions, resolveCodexSessionTarget } = require("../src/codex");
 const { mapTranscriptToTurns, withLockRetries: bridgeWithLockRetries } = require("../src/bridge");
 const {
@@ -35,6 +36,12 @@ function withTempDir(prefix, fn) {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function runCliProcess(args) {
+  return spawnSync(process.execPath, [path.join(__dirname, "..", "bin", "threadbridge.js"), ...args], {
+    encoding: "utf8",
+  });
 }
 
 function createMinimalT3Schema(db) {
@@ -141,6 +148,120 @@ function createMinimalT3Schema(db) {
   `);
 }
 
+test("t3 search finds message-body matches and ranks title matches first", () => {
+  withTempDir("threadbridge-t3-search-", (root) => {
+    const dbPath = path.join(root, "state.sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      createMinimalT3Schema(db);
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run("project-1", "Reviews", "/tmp/reviews", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+
+      const insertThread = db.prepare(
+        "INSERT INTO projection_threads (thread_id, project_id, title, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, NULL)",
+      );
+      insertThread.run("title-hit", "project-1", "PLAT-403 review", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      insertThread.run("message-hit", "project-1", "Per-segment review", "2026-07-02T00:00:00.000Z", "2026-07-03T00:00:00.000Z");
+      insertThread.run("no-hit", "project-1", "Unrelated", "2026-07-04T00:00:00.000Z", "2026-07-04T00:00:00.000Z");
+
+      db.prepare(
+        "INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+      ).run(
+        "message-1",
+        "message-hit",
+        "assistant",
+        "The PLAT-403 empty-list regression still stands.",
+        "2026-07-03T00:00:00.000Z",
+        "2026-07-03T00:00:00.000Z",
+      );
+    } finally {
+      db.close();
+    }
+
+    const rows = searchT3Threads({ dbPath, limit: 10, query: "PLAT-403" });
+    assert.deepEqual(rows.map((row) => row.threadId), ["title-hit", "message-hit"]);
+    assert.equal(rows[0].matchedText, null);
+    assert.equal(rows[1].matchedRole, "assistant");
+    assert.match(rows[1].matchedText, /empty-list regression/);
+  });
+});
+
+test("formatMatchExcerpt centers and normalizes a message match", () => {
+  const excerpt = formatMatchExcerpt(`before\n${"x".repeat(100)} PLAT-403 after`, "PLAT-403", 60);
+  assert.match(excerpt, /^…/);
+  assert.match(excerpt, /PLAT-403/);
+});
+
+test("list --json returns a stable success envelope", () => {
+  withTempDir("threadbridge-json-list-", (root) => {
+    const sessionDir = path.join(root, "2026", "07", "14");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, "agent-session.jsonl"),
+      [
+        JSON.stringify({
+          type: "session_meta",
+          payload: { id: "agent-session", timestamp: "2026-07-14T12:00:00.000Z", cwd: "/tmp/agent" },
+          timestamp: "2026-07-14T12:00:00.000Z",
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [{ text: "Agent-readable output" }] },
+          timestamp: "2026-07-14T12:00:01.000Z",
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const result = runCliProcess(["codex", "list", "--root", root, "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.command, "codex list");
+    assert.equal(output.data[0].id, "agent-session");
+  });
+});
+
+test("show --json emits canonical Threadbridge IR", () => {
+  withTempDir("threadbridge-json-show-", (root) => {
+    const sessionDir = path.join(root, "2026", "07", "14");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, "show-session.jsonl"),
+      [
+        JSON.stringify({
+          type: "session_meta",
+          payload: { id: "show-session", timestamp: "2026-07-14T12:00:00.000Z", cwd: "/tmp/show" },
+          timestamp: "2026-07-14T12:00:00.000Z",
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [{ text: "Inspect this thread" }] },
+          timestamp: "2026-07-14T12:00:01.000Z",
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const result = runCliProcess(["codex", "show", "last", "--root", root, "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.data.schemaVersion, "1.0");
+    assert.equal(output.data.source.sourceId, "show-session");
+    assert.equal(output.data.messages[0].text, "Inspect this thread");
+  });
+});
+
+test("--json formats CLI failures for programmatic handling", () => {
+  const result = runCliProcess(["unknown", "list", "--json"]);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  const output = JSON.parse(result.stderr);
+  assert.equal(output.ok, false);
+  assert.match(output.error.message, /Unsupported adapter/);
+});
+
 test("opencode commands map generic root flags to OpenCode roots", () => {
   const args = parseArgs([
     "opencode",
@@ -177,6 +298,11 @@ test("t3 to-opencode accepts root as the OpenCode destination root", () => {
   assert.equal(args.dbPath, "/tmp/state.sqlite");
   assert.equal(args.root, "/tmp/opencode-storage");
   assert.equal(args.opencodeRoot, "/tmp/opencode-storage");
+});
+
+test("cursor copy accepts the documented destination chat id flag", () => {
+  const args = parseArgs(["cursor", "copy", "last", "--dest-chat-id", "cursor-target"]);
+  assert.equal(args.newChatId, "cursor-target");
 });
 
 test("resolveOpenCodeSessionTarget throws a clear error when the root is empty", () => {
@@ -439,6 +565,39 @@ test("Cursor export produces a parseable ACP chat payload", () => {
       assert.equal(parsed.transcript.length, 2);
       assert.equal(parsed.transcript[0].text, "cursor hello");
       assert.equal(parsed.transcript[1].text, "cursor hi");
+    } finally {
+      process.env.CURSOR_DATA_DIR = originalCursorDataDir;
+    }
+  });
+});
+
+test("cursor copy executes through the CLI and returns a JSON receipt", () => {
+  withTempDir("threadbridge-cursor-copy-cli-", (cursorRoot) => {
+    const originalCursorDataDir = process.env.CURSOR_DATA_DIR;
+    process.env.CURSOR_DATA_DIR = cursorRoot;
+    try {
+      generateCursorSessionFromT3({
+        t3Thread: {
+          threadId: "thread-cursor-copy",
+          title: "Cursor Copy Source",
+          createdAt: "2026-07-14T12:00:00.000Z",
+          messages: [{ role: "user", text: "copy via CLI", createdAt: "2026-07-14T12:00:01.000Z" }],
+        },
+        chatId: "cursor_source_cli",
+      });
+
+      const result = runCliProcess([
+        "cursor",
+        "copy",
+        "cursor_source_cli",
+        "--new-chat-id",
+        "cursor_target_cli",
+        "--json",
+      ]);
+      assert.equal(result.status, 0, result.stderr);
+      const output = JSON.parse(result.stdout);
+      assert.equal(output.data.createdIds.chatId, "cursor_target_cli");
+      assert.equal(parseCursorChat("cursor_target_cli").transcript[0].text, "copy via CLI");
     } finally {
       process.env.CURSOR_DATA_DIR = originalCursorDataDir;
     }
