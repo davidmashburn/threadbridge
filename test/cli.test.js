@@ -21,6 +21,11 @@ const {
   parseOpenCodeSession,
   resolveOpenCodeSessionTarget,
 } = require("../src/opencode");
+const {
+  listAntigravityConversations,
+  parseAntigravityConversation,
+  parseAntigravityTranscript,
+} = require("../src/antigravity");
 const { importCodexIntoT3 } = require("../src/bridge");
 const { copyThreadToNewWorkspace, withLockRetries } = require("../src/t3-copy");
 const { DatabaseSync } = require("node:sqlite");
@@ -147,6 +152,233 @@ function createMinimalT3Schema(db) {
     );
   `);
 }
+
+function createAntigravityFixture(root, conversationId = "antigravity-test") {
+  const databasePath = path.join(root, "conversations", `${conversationId}.db`);
+  const transcriptPath = path.join(
+    root,
+    "brain",
+    conversationId,
+    ".system_generated",
+    "logs",
+    "transcript.jsonl",
+  );
+  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+  fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+  fs.writeFileSync(databasePath, "placeholder database", "utf8");
+
+  const records = [
+    {
+      step_index: 0,
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:00.000Z",
+      content: "<USER_REQUEST>  First question  </USER_REQUEST><ADDITIONAL_METADATA>private context</ADDITIONAL_METADATA>",
+    },
+    {
+      step_index: 1,
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:01.000Z",
+      thinking: "private reasoning must not be copied",
+      tool_calls: [{ name: "search" }],
+    },
+    {
+      step_index: 2,
+      source: "MODEL",
+      type: "GENERIC",
+      status: "RUNNING",
+      created_at: "2026-08-01T12:00:02.000Z",
+      content: "in-progress output",
+    },
+    {
+      step_index: 3,
+      source: "MODEL",
+      type: "GENERIC",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:03.000Z",
+      content: "tool result",
+    },
+    {
+      step_index: 4,
+      source: "SYSTEM",
+      type: "CHECKPOINT",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:04.000Z",
+      content: "system checkpoint must not be copied",
+    },
+    {
+      step_index: 5,
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:05.000Z",
+      thinking: "more private reasoning",
+      content: "visible answer",
+    },
+    {
+      step_index: 6,
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      status: "DONE",
+      created_at: "2026-08-01T12:00:06.000Z",
+      content: "<USER_REQUEST>Follow-up</USER_REQUEST><USER_SETTINGS_CHANGE>{}</USER_SETTINGS_CHANGE>",
+    },
+  ];
+  fs.writeFileSync(transcriptPath, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+  return { databasePath, transcriptPath, records };
+}
+
+test("Antigravity transcript parser preserves visible turns and omits private/system records", () => {
+  withTempDir("threadbridge-antigravity-parse-", (root) => {
+    const conversationId = "antigravity-test";
+    const fixture = createAntigravityFixture(root, conversationId);
+    const session = parseAntigravityConversation({ root, target: conversationId });
+
+    assert.equal(session.databasePath, fixture.databasePath);
+    assert.deepEqual(
+      session.transcript.map((message) => [message.role, message.text, message.phase]),
+      [
+        ["user", "First question", "user-input"],
+        ["assistant", "tool result", "tool-result"],
+        ["assistant", "visible answer", "message"],
+        ["user", "Follow-up", "user-input"],
+      ],
+    );
+    assert.equal(session.extensions.antigravity.recordCount, fixture.records.length);
+    assert.equal(session.extensions.antigravity.skippedInProgress, 1);
+    assert.equal(session.extensions.antigravity.skippedPrivateOrSystem, 2);
+  });
+});
+
+test("Antigravity list and CLI show resolve a conversation by exact id", () => {
+  withTempDir("threadbridge-antigravity-show-", (root) => {
+    const conversationId = "antigravity-show";
+    createAntigravityFixture(root, conversationId);
+    const listed = listAntigravityConversations({ root, limit: 10 });
+    assert.deepEqual(listed.map((conversation) => conversation.id), [conversationId]);
+
+    const args = parseArgs(["antigravity", "show", conversationId, "--root", root]);
+    assert.equal(args.antigravityRoot, root);
+
+    const result = runCliProcess(["antigravity", "show", conversationId, "--root", root, "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.data.source.harness, "antigravity");
+    assert.equal(output.data.source.sourceId, conversationId);
+    assert.equal(output.data.messages.length, 4);
+    assert.equal(output.data.messages.some((message) => message.text.includes("system checkpoint")), false);
+    assert.equal(output.data.messages.some((message) => message.text.includes("private reasoning")), false);
+  });
+});
+
+test("Antigravity to-t3 imports the canonical IR transcript", () => {
+  withTempDir("threadbridge-antigravity-import-", (root) => {
+    const conversationId = "antigravity-import";
+    createAntigravityFixture(root, conversationId);
+    const dbPath = path.join(root, "target.sqlite");
+    const db = new DatabaseSync(dbPath);
+    createMinimalT3Schema(db);
+    db.close();
+
+    const result = runCliProcess([
+      "antigravity",
+      "to-t3",
+      conversationId,
+      "--root",
+      root,
+      "--db-path",
+      dbPath,
+      "--workspace-root",
+      "/tmp/antigravity-import-project",
+      "--no-backup",
+      "--json",
+    ]);
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.command, "antigravity to-t3");
+    assert.equal(output.data.source.id, conversationId);
+    assert.equal(output.data.counts.messages, 4);
+    assert.equal(output.data.counts.turns, 2);
+
+    const targetDb = new DatabaseSync(dbPath, { readonly: true });
+    try {
+      const thread = targetDb
+        .prepare("SELECT title, project_id FROM projection_threads WHERE thread_id = ?")
+        .get(output.data.createdIds.threadId);
+      assert.equal(thread.title, "First question");
+      const modelSelection = targetDb
+        .prepare("SELECT model_selection_json FROM projection_threads WHERE thread_id = ?")
+        .get(output.data.createdIds.threadId);
+      assert.equal(typeof modelSelection.model_selection_json, "string");
+      assert.equal(typeof JSON.parse(modelSelection.model_selection_json), "object");
+      const messages = targetDb
+        .prepare("SELECT role, text FROM projection_thread_messages WHERE thread_id = ? ORDER BY created_at, message_id")
+        .all(output.data.createdIds.threadId);
+      assert.deepEqual(messages.map((message) => [message.role, message.text]), [
+        ["user", "First question"],
+        ["assistant", "tool result"],
+        ["assistant", "visible answer"],
+        ["user", "Follow-up"],
+      ]);
+    } finally {
+      targetDb.close();
+    }
+  });
+});
+
+test("Antigravity to-t3 inherits the target project's model selection", () => {
+  withTempDir("threadbridge-antigravity-project-default-", (root) => {
+    const conversationId = "antigravity-project-default";
+    createAntigravityFixture(root, conversationId);
+    const dbPath = path.join(root, "target.sqlite");
+    const db = new DatabaseSync(dbPath);
+    createMinimalT3Schema(db);
+    db.prepare(
+      "INSERT INTO projection_projects (project_id, title, workspace_root, default_model_selection_json, scripts_json, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+    ).run(
+      "target-project",
+      "Target Project",
+      "/tmp/antigravity-project-default",
+      JSON.stringify({ instanceId: "codex", model: "gpt-5.4" }),
+      "[]",
+      "2026-08-01T12:00:00.000Z",
+      "2026-08-01T12:00:00.000Z",
+    );
+    db.close();
+
+    const result = runCliProcess([
+      "antigravity",
+      "to-t3",
+      conversationId,
+      "--root",
+      root,
+      "--db-path",
+      dbPath,
+      "--workspace-root",
+      "/tmp/antigravity-project-default",
+      "--project-id",
+      "target-project",
+      "--no-backup",
+      "--json",
+    ]);
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    const targetDb = new DatabaseSync(dbPath, { readonly: true });
+    try {
+      const row = targetDb
+        .prepare("SELECT model_selection_json FROM projection_threads WHERE thread_id = ?")
+        .get(output.data.createdIds.threadId);
+      assert.equal(row.model_selection_json, JSON.stringify({ instanceId: "codex", model: "gpt-5.4" }));
+    } finally {
+      targetDb.close();
+    }
+  });
+});
 
 test("t3 search finds message-body matches and ranks title matches first", () => {
   withTempDir("threadbridge-t3-search-", (root) => {

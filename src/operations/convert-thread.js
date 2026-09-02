@@ -9,6 +9,7 @@ const { readOpenCodeSessionAsIr } = require("../adapters/opencode/read");
 const { writeIrToOpenCode } = require("../adapters/opencode/write");
 const { readCursorChatAsIr } = require("../adapters/cursor/read");
 const { writeIrToCursor } = require("../adapters/cursor/write");
+const { readAntigravityConversationAsIr } = require("../adapters/antigravity/read");
 
 function convertThread(args) {
   const intent = normalizeWriteIntent(args.intent || "transcript-only-conversion", args);
@@ -53,6 +54,11 @@ function convertThread(args) {
       });
     } else if (args.sourceHarness === "cursor") {
       ir = readCursorChatAsIr({
+        target: args.target,
+      });
+    } else if (args.sourceHarness === "antigravity") {
+      ir = readAntigravityConversationAsIr({
+        root: args.antigravityRoot,
         target: args.target,
       });
     }

@@ -12,21 +12,22 @@ const {
   backupSqlite,
   ensureDbExists,
   insertSnapshot,
+  normalizeModelSelectionJson,
   remapSnapshotIds,
   withLockRetries,
 } = require("../../t3-copy");
 
 function createModelSelectionFromIr(ir, intent) {
   if (intent.modelSelection) {
-    return intent.modelSelection;
+    return normalizeModelSelectionJson(intent.modelSelection, { fallback: null });
   }
   if (intent.provider || intent.model) {
-    return JSON.stringify({
+    return normalizeModelSelectionJson({
       provider: intent.provider || ir.thread.modelSelection?.provider || ir.source.harness,
       model: intent.model || ir.thread.modelSelection?.model || "gpt-5.4",
-    });
+    }, { fallback: null });
   }
-  return ir.thread.modelSelection ? JSON.stringify(ir.thread.modelSelection) : null;
+  return normalizeModelSelectionJson(ir.thread.modelSelection, { fallback: null });
 }
 
 function importIrTranscriptIntoT3({
@@ -118,8 +119,8 @@ function importIrTranscriptIntoT3({
     : (normalizedMessages[normalizedMessages.length - 1]?.updatedAt || now);
 
   const resolvedWorkspaceRoot = path.resolve(intent.workspaceRoot || ir.thread.workspaceRoot || process.cwd());
-  const modelSelectionJson = createModelSelectionFromIr(ir, intent);
-  const parsedModelSelection = modelSelectionJson ? JSON.parse(modelSelectionJson) : null;
+  let modelSelectionJson = createModelSelectionFromIr(ir, intent);
+  let parsedModelSelection = null;
   const threadTitle = intent.title || ir.thread.title;
   const runtimeMode = ir.thread.runtimeMode || "approval-required";
   const interactionMode = ir.thread.interactionMode || "default";
@@ -152,6 +153,16 @@ function importIrTranscriptIntoT3({
           .get(resolvedWorkspaceRoot);
         resolvedProjectId = existing ? existing.projectId : crypto.randomUUID();
       }
+
+      const targetProject = db
+        .prepare("SELECT default_model_selection_json FROM projection_projects WHERE project_id = ? LIMIT 1")
+        .get(resolvedProjectId);
+      const modelSelectionCandidate = [
+        modelSelectionJson,
+        targetProject?.default_model_selection_json,
+      ].find((value) => value !== undefined && value !== null && value !== "");
+      modelSelectionJson = normalizeModelSelectionJson(modelSelectionCandidate);
+      parsedModelSelection = JSON.parse(modelSelectionJson);
 
       db.prepare(`
         INSERT INTO projection_projects (

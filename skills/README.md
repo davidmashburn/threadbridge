@@ -22,6 +22,7 @@ Available skills:
 - `skills/claude/SKILL.md` - Claude CLI thread bridge operations  
 - `skills/cursor/SKILL.md` - Cursor CLI thread bridge operations
 - `skills/opencode/SKILL.md` - OpenCode CLI thread bridge operations
+- `skills/antigravity/SKILL.md` - Antigravity conversation bridge operations
 - `skills/t3/SKILL.md` - T3 thread bridge operations
 
 ## Key Features

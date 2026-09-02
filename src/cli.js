@@ -21,6 +21,11 @@ const {
   DEFAULT_OPENCODE_ROOT,
   listOpenCodeSessions,
 } = require("./opencode");
+const {
+  DEFAULT_ANTIGRAVITY_ROOT,
+  listAntigravityConversations,
+  searchAntigravityConversations,
+} = require("./antigravity");
 const { copyThread } = require("./operations/copy-thread");
 const { convertThread } = require("./operations/convert-thread");
 const { readT3ThreadAsIr } = require("./adapters/t3/read");
@@ -28,6 +33,7 @@ const { readCodexSessionAsIr } = require("./adapters/codex/read");
 const { readClaudeSessionAsIr } = require("./adapters/claude/read");
 const { readCursorChatAsIr } = require("./adapters/cursor/read");
 const { readOpenCodeSessionAsIr } = require("./adapters/opencode/read");
+const { readAntigravityConversationAsIr } = require("./adapters/antigravity/read");
 
 const DEFAULT_T3_DB_PATH = path.join(os.homedir(), ".t3", "userdata", "state.sqlite");
 const DEFAULT_T3_SOURCE_DB_PATH = path.join(os.homedir(), ".t3", "dev", "state.sqlite");
@@ -70,10 +76,16 @@ function usage() {
   threadbridge opencode copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge opencode to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
+  threadbridge antigravity list [--root DIR] [--limit N] [--json]
+  threadbridge antigravity search QUERY [--root DIR] [--limit N] [--json]
+  threadbridge antigravity show [CONVERSATION_ID|PATH|last] [--root DIR] [--json]
+  threadbridge antigravity to-t3 [CONVERSATION_ID|PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
+
 Defaults:
   --source-db-path ${DEFAULT_T3_SOURCE_DB_PATH}
   --db-path        ${DEFAULT_T3_DB_PATH}
   --root           ${DEFAULT_CODEX_ROOT}
+  --root (antigravity) ${DEFAULT_ANTIGRAVITY_ROOT}
   --project-path  ${DEFAULT_CLAUDE_ROOT}
   --busy-timeout-ms ${DEFAULT_BUSY_TIMEOUT_MS}
   --lock-retries    ${DEFAULT_LOCK_RETRIES}
@@ -119,8 +131,8 @@ function parseArgs(argv) {
   }
 
   const [adapter, command, ...rest] = argv;
-  if (!["t3", "codex", "claude", "cursor", "opencode"].includes(adapter)) {
-    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex, claude, cursor, opencode`);
+  if (!["t3", "codex", "claude", "cursor", "opencode", "antigravity"].includes(adapter)) {
+    fail(`Unsupported adapter '${adapter}'. Supported: t3, codex, claude, cursor, opencode, antigravity`);
   }
 
   const args = {
@@ -135,6 +147,7 @@ function parseArgs(argv) {
     destProjectPath: DEFAULT_CLAUDE_ROOT,
     opencodeRoot: DEFAULT_OPENCODE_ROOT,
     destOpenCodeRoot: DEFAULT_OPENCODE_ROOT,
+    antigravityRoot: DEFAULT_ANTIGRAVITY_ROOT,
     limit: DEFAULT_LIST_LIMIT,
     newThreadId: null,
     newSessionId: null,
@@ -210,6 +223,7 @@ function parseArgs(argv) {
       else if (token === "--root") {
         args.root = next;
         if (usesOpenCodeRoot(adapter, command)) args.opencodeRoot = next;
+        if (adapter === "antigravity") args.antigravityRoot = next;
       } else if (token === "--dest-root") {
         args.destRoot = next;
         if (adapter === "opencode") args.destOpenCodeRoot = next;
@@ -245,6 +259,7 @@ function parseArgs(argv) {
   const validClaude = ["list", "search", "show", "copy", "to-t3"];
   const validCursor = ["list", "search", "show", "copy", "to-t3"];
   const validOpenCode = ["list", "search", "show", "copy", "to-t3"];
+  const validAntigravity = ["list", "search", "show", "to-t3"];
   if (adapter === "t3" && !validT3.includes(command)) {
     fail(`Unsupported t3 command '${command}'.`);
   }
@@ -259,6 +274,9 @@ function parseArgs(argv) {
   }
   if (adapter === "opencode" && !validOpenCode.includes(command)) {
     fail(`Unsupported opencode command '${command}'.`);
+  }
+  if (adapter === "antigravity" && !validAntigravity.includes(command)) {
+    fail(`Unsupported antigravity command '${command}'.`);
   }
 
   if (command === "search") {
@@ -380,6 +398,23 @@ function runOpenCodeList(args) {
     process.stdout.write(`  title: ${session.title}\n`);
     process.stdout.write(`  slug: ${session.slug}\n`);
     process.stdout.write(`  file: ${session.filePath}\n\n`);
+  }
+}
+
+function runAntigravityList(args) {
+  const { antigravityRoot, limit } = args;
+  const conversations = listAntigravityConversations({ root: antigravityRoot, limit });
+  if (emitJson(args, conversations)) return;
+  for (const conversation of conversations) {
+    process.stdout.write(`${conversation.updatedAt || conversation.createdAt || "unknown"}  ${conversation.id}\n`);
+    process.stdout.write(`  title: ${conversation.title}\n`);
+    process.stdout.write(
+      `  messages: ${conversation.messageCount} (${conversation.userCount} user / ${conversation.assistantCount} assistant)\n`,
+    );
+    process.stdout.write(`  prompt: ${conversation.prompt}\n`);
+    if (conversation.transcriptPath) process.stdout.write(`  transcript: ${conversation.transcriptPath}\n`);
+    if (conversation.databasePath) process.stdout.write(`  database: ${conversation.databasePath}\n`);
+    process.stdout.write("\n");
   }
 }
 
@@ -542,6 +577,27 @@ function runOpenCodeSearch(args) {
   }
 }
 
+function runAntigravitySearch(args) {
+  const { antigravityRoot, limit, query } = args;
+  const conversations = searchAntigravityConversations({ root: antigravityRoot, limit, query });
+  if (emitJson(args, conversations.map((conversation) => ({
+    ...conversation,
+    matchedExcerpt: conversation.matchedText ? formatMatchExcerpt(conversation.matchedText, query) : null,
+  })))) return;
+  for (const conversation of conversations) {
+    process.stdout.write(`${conversation.updatedAt || conversation.createdAt || "unknown"}  ${conversation.id}\n`);
+    process.stdout.write(`  title: ${conversation.title}\n`);
+    if (conversation.matchedText) {
+      process.stdout.write(
+        `  match (${conversation.matchedRole || "message"}): ${formatMatchExcerpt(conversation.matchedText, query)}\n`,
+      );
+    } else {
+      process.stdout.write(`  prompt: ${conversation.prompt}\n`);
+    }
+    process.stdout.write(`  transcript: ${conversation.transcriptPath || "(missing)"}\n\n`);
+  }
+}
+
 function readThreadAsIr(args) {
   if (args.adapter === "t3") {
     return readT3ThreadAsIr({ dbPath: args.dbPath, target: args.target, includeRuntime: args.copyRuntime });
@@ -555,6 +611,9 @@ function readThreadAsIr(args) {
   if (args.adapter === "cursor") return readCursorChatAsIr({ target: args.target });
   if (args.adapter === "opencode") {
     return readOpenCodeSessionAsIr({ root: args.opencodeRoot, target: args.target });
+  }
+  if (args.adapter === "antigravity") {
+    return readAntigravityConversationAsIr({ root: args.antigravityRoot, target: args.target });
   }
   throw new CliError(`Unsupported adapter '${args.adapter}'.`);
 }
@@ -596,6 +655,10 @@ function runCli(argv) {
       runCursorList(args);
       return;
     }
+    if (args.adapter === "antigravity" && args.command === "list") {
+      runAntigravityList(args);
+      return;
+    }
 
     if (args.adapter === "t3" && args.command === "search") {
       runT3Search(args);
@@ -615,6 +678,10 @@ function runCli(argv) {
     }
     if (args.adapter === "opencode" && args.command === "search") {
       runOpenCodeSearch(args);
+      return;
+    }
+    if (args.adapter === "antigravity" && args.command === "search") {
+      runAntigravitySearch(args);
       return;
     }
 
@@ -718,6 +785,33 @@ function runCli(argv) {
       });
       if (emitJson(args, receipt)) return;
       process.stdout.write(`Imported Codex session ${receipt.source.id} into T3.\n`);
+      process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
+      process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
+      process.stdout.write(`Database: ${receipt.target.path}\n`);
+      if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
+      process.stdout.write(`Imported messages: ${receipt.counts.messages || 0}\n`);
+      process.stdout.write(`Imported turns: ${receipt.counts.turns || 0}\n`);
+      return;
+    }
+
+    if (args.adapter === "antigravity" && args.command === "to-t3") {
+      const receipt = convertThread({
+        sourceHarness: "antigravity",
+        targetHarness: "t3",
+        antigravityRoot: args.antigravityRoot,
+        target: args.target,
+        dbPath: args.dbPath,
+        title: args.title,
+        projectId: args.projectId,
+        workspaceRoot: args.workspaceRoot,
+        backup: args.backup,
+        busyTimeoutMs: args.busyTimeoutMs,
+        lockRetries: args.lockRetries,
+        retryDelayMs: args.retryDelayMs,
+        intent: "import-session",
+      });
+      if (emitJson(args, receipt)) return;
+      process.stdout.write(`Imported Antigravity conversation ${receipt.source.id} into T3.\n`);
       process.stdout.write(`Thread ID: ${receipt.createdIds.threadId}\n`);
       process.stdout.write(`Thread title: ${receipt.details.threadTitle}\n`);
       process.stdout.write(`Database: ${receipt.target.path}\n`);

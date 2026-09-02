@@ -28,6 +28,7 @@ Current scope:
 - `claude list|copy|to-t3`: inspect, duplicate, and import Claude sessions
 - `cursor list|copy|to-t3`: inspect, duplicate, and import Cursor ACP/Composer chats
 - `opencode list|copy|to-t3`: inspect, duplicate, and import OpenCode sessions
+- `antigravity list|search|show|to-t3`: inspect and import Antigravity conversations
 - `--json`: return stable success/error envelopes for agent and script integration
 
 The T3 copy/import flows are designed for live usage while T3 is open:
@@ -69,6 +70,7 @@ Use `show --json` to read a complete thread in the versioned, harness-neutral Th
 ./bin/threadbridge.js codex show last --root ~/.codex/sessions --json
 ./bin/threadbridge.js t3 show <thread-id> --db-path ~/.t3/userdata/state.sqlite --json
 ./bin/threadbridge.js claude show last --project-path ~/src/my-project --json
+./bin/threadbridge.js antigravity show <conversation-id> --json
 ```
 
 The IR includes `schemaVersion`, source metadata, thread/project metadata, normalized content blocks, messages, turns, activities, plans, runtime capabilities, warnings, and adapter extensions. T3 runtime bindings remain excluded unless `--copy-runtime` is explicitly supplied.
@@ -178,6 +180,18 @@ Import a Cursor chat into T3:
 ./bin/threadbridge.js cursor to-t3 last \
   --db-path ~/.t3/userdata/state.sqlite
 ```
+
+List and import Antigravity conversations:
+
+```bash
+./bin/threadbridge.js antigravity list --root ~/.gemini/antigravity --limit 5
+./bin/threadbridge.js antigravity search "Moxi" --root ~/.gemini/antigravity --json
+./bin/threadbridge.js antigravity to-t3 <conversation-id> \
+  --root ~/.gemini/antigravity \
+  --db-path ~/.t3/userdata/state.sqlite
+```
+
+Antigravity conversations are read from the documented `brain/<conversationId>/.system_generated/logs/transcript.jsonl` transcript. The opaque conversation database, private model reasoning, system events, and runtime bindings are not copied; completed tool results are retained as assistant text in the T3 transcript.
 
 List OpenCode sessions:
 

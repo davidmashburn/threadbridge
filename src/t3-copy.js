@@ -6,6 +6,10 @@ const { DatabaseSync } = require("node:sqlite");
 const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 const DEFAULT_LOCK_RETRIES = 20;
 const DEFAULT_RETRY_DELAY_MS = 500;
+const DEFAULT_T3_MODEL_SELECTION_JSON = JSON.stringify({
+  instanceId: "claudeAgent",
+  model: "claude-opus-4-7",
+});
 
 function fail(message) {
   throw new Error(message);
@@ -24,6 +28,24 @@ function parseMaybeJson(text) {
   } catch {
     return null;
   }
+}
+
+function normalizeModelSelectionJson(value, { fallback = DEFAULT_T3_MODEL_SELECTION_JSON } = {}) {
+  const candidate = value === undefined || value === null || value === "" ? fallback : value;
+  if (candidate === undefined || candidate === null || candidate === "") return null;
+
+  let parsed = candidate;
+  if (typeof candidate === "string") {
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      fail("T3 model selection must be valid JSON.");
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fail("T3 model selection must be a JSON object.");
+  }
+  return JSON.stringify(parsed);
 }
 
 function backupSqlite(dbPath, busyTimeoutMs) {
@@ -276,10 +298,24 @@ function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, bu
       thread.project_id = newProjectId;
     }
 
-    // Update model selection if specified
-    if (newModelSelection) {
+    // Update model selection if specified. The final value is resolved against
+    // the target project's default inside the transaction below.
+    if (newModelSelection !== undefined && newModelSelection !== null) {
       thread.model_selection_json = newModelSelection;
     }
+
+    const targetProject = db
+      .prepare("SELECT default_model_selection_json FROM projection_projects WHERE project_id = ? LIMIT 1")
+      .get(thread.project_id);
+    const sourceProjectModelSelection = thread.project_id === snapshot.project.project_id
+      ? snapshot.project.default_model_selection_json
+      : null;
+    const modelSelectionCandidate = [
+      thread.model_selection_json,
+      targetProject?.default_model_selection_json,
+      sourceProjectModelSelection,
+    ].find((value) => value !== undefined && value !== null && value !== "");
+    thread.model_selection_json = normalizeModelSelectionJson(modelSelectionCandidate);
 
     // Insert project if it doesn't exist
     db.prepare(`
@@ -295,7 +331,9 @@ function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, bu
       thread.project_id === snapshot.project.project_id ? snapshot.project.created_at : new Date().toISOString(),
       thread.project_id === snapshot.project.project_id ? snapshot.project.updated_at : new Date().toISOString(),
       thread.project_id === snapshot.project.project_id ? snapshot.project.deleted_at : null,
-      thread.project_id === snapshot.project.project_id ? snapshot.project.default_model_selection_json : null,
+      thread.project_id === snapshot.project.project_id
+        ? normalizeModelSelectionJson(snapshot.project.default_model_selection_json, { fallback: null })
+        : thread.model_selection_json,
     );
 
     db.prepare(`
@@ -619,6 +657,7 @@ module.exports = {
   buildSnapshot,
   ensureDbExists,
   insertSnapshot,
+  normalizeModelSelectionJson,
   remapSnapshotIds,
   resolveThreadTarget,
   withLockRetries,
