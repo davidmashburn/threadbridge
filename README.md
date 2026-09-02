@@ -44,6 +44,13 @@ npm install
 npm run check
 ```
 
+Install the published CLI globally with the scoped package name:
+
+```bash
+npm install --global @davmash/threadbridge
+threadbridge --help
+```
+
 Prerequisites:
 - Node.js 22+
 - `sqlite3` available on `PATH` for backup-enabled T3 import/copy flows
