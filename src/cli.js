@@ -53,7 +53,7 @@ function usage() {
 
   threadbridge codex list [--root DIR] [--limit N] [--include-boilerplate] [--json]
   threadbridge codex search QUERY [--root DIR] [--limit N] [--include-boilerplate] [--json]
-  threadbridge codex show [SESSION_ID|SESSION_PATH|last] [--root DIR] [--include-boilerplate] [--json]
+  threadbridge codex show [SESSION_ID|SESSION_PATH|last] [--root DIR] [--include-boilerplate] [--no-tool-calls] [--json]
   threadbridge codex copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge codex to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
@@ -162,6 +162,7 @@ function parseArgs(argv) {
     newModelSelection: null,
     copyRuntime: false,
     includeBoilerplate: false,
+    includeToolCalls: true,
     json: false,
     backup: true,
     query: null,
@@ -183,6 +184,10 @@ function parseArgs(argv) {
     }
     if (token === "--include-boilerplate") {
       args.includeBoilerplate = true;
+      continue;
+    }
+    if (token === "--no-tool-calls") {
+      args.includeToolCalls = false;
       continue;
     }
     if (token === "--json") {
@@ -603,7 +608,12 @@ function readThreadAsIr(args) {
     return readT3ThreadAsIr({ dbPath: args.dbPath, target: args.target, includeRuntime: args.copyRuntime });
   }
   if (args.adapter === "codex") {
-    return readCodexSessionAsIr({ root: args.root, target: args.target, includeBoilerplate: args.includeBoilerplate });
+    return readCodexSessionAsIr({
+      root: args.root,
+      target: args.target,
+      includeBoilerplate: args.includeBoilerplate,
+      includeToolCalls: args.includeToolCalls,
+    });
   }
   if (args.adapter === "claude") {
     return readClaudeSessionAsIr({ projectPath: args.projectPath, target: args.target });

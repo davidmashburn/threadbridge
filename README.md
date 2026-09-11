@@ -219,7 +219,26 @@ Optional flags:
 - `--new-thread-id <uuid>`: set target thread ID manually
 - `--copy-runtime`: also copy session/runtime rows
 - `--no-backup`: skip automatic backup
+- `--no-tool-calls`: omit tool calls from a Codex read (Codex `show`/conversions)
+- `--include-boilerplate`: keep harness-injected context blocks
 - `--json`: emit machine-readable output (available on every command)
+
+## Fidelity
+
+A conversion carries the conversation plus the commands that were run. It does not carry
+tool output or reasoning: outputs dominate a rollout's bytes, while the command that
+produced them carries the meaning. On one real Codex thread that is ~49K tokens of
+transcript instead of the multi-megabyte rollout, with the commands intact.
+
+- Tool calls become `tool-call` blocks, rendered in text as `$ <command>` for shell work and
+  `[<tool>] <input>` otherwise. Shell commands are recovered from the harness wrapper and
+  kept up to 1000 characters; other tool inputs are truncated to 300.
+- Tool results and reasoning are dropped, and the counts are reported in the IR's `warnings`
+  array rather than discarded silently.
+- Harness-injected context is filtered per content part, matching the shape of a
+  self-closing block (`<environment_context>…</environment_context>`) rather than a list of
+  tag names, so a tag introduced later is handled without a code change. A real prompt that
+  shares a message with injected context is preserved.
 
 ## Notes
 

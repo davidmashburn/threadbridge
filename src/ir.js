@@ -65,6 +65,19 @@ function extractPlainTextFromBlocks(blocks = []) {
       if (block.type === "text" || block.type === "reasoning-summary") {
         return typeof block.text === "string" ? [block.text] : [];
       }
+      if (block.type === "tool-call") {
+        const toolName = block.toolName || "tool";
+        if (typeof block.input?.command === "string" && block.input.command) {
+          return [`$ ${block.input.command}`];
+        }
+        const source =
+          typeof block.input?.source === "string"
+            ? block.input.source
+            : typeof block.input === "string"
+              ? block.input
+              : "";
+        return [source ? `[${toolName}] ${source}` : `[${toolName}]`];
+      }
       if (block.type === "tool-result") {
         return typeof block.output === "string" ? [block.output] : [];
       }

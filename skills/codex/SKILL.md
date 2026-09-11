@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:58:00Z
-modified_at: 2026-07-15T01:18:18Z
+modified_at: 2026-09-11T20:00:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -32,9 +32,15 @@ Use this skill when the user asks to:
 
 For agent-driven reads, append `--json`. Use `search` to resolve an exact ID and `show <ID> --json` to inspect canonical IR before proposing a write. Parse the JSON envelope instead of human-readable output.
 
+Prefer `search` over `last`. `last` resolves to whichever session was touched most recently, which is frequently not the one the user means.
+
 ### Codex Operations
+- Find a session by title or prompt text:
+  - `threadbridge codex search "<QUERY>" --root ~/.codex/sessions --json`
 - List Codex sessions:
   - `threadbridge codex list --root ~/.codex/sessions --limit <N>`
+- Inspect a session as canonical IR without writing anything:
+  - `threadbridge codex show <SESSION|last> --root ~/.codex/sessions --json`
 - Copy Codex session:
   - `threadbridge codex copy <SESSION|last> --root ~/.codex/sessions --dest-root ~/.codex/sessions`
 
@@ -59,6 +65,21 @@ For agent-driven reads, append `--json`. Use `search` to resolve an exact ID and
 - `--new-model`: Set model for target provider (e.g., `opencode/big-pickle`, `gpt-5.4`)
 - `--new-model-selection`: Full JSON for advanced config
 - `--new-project-id`: Target workspace/project ID
+
+## What a bridged Codex thread contains
+
+A conversion carries the conversation plus the commands that were run. It does not carry
+tool output or reasoning, because outputs dominate a rollout's size while the command that
+produced them carries the meaning.
+
+- Tool calls appear as `tool-call` blocks, rendered in text as `$ <command>` for shell work
+  and `[<tool>] <input>` otherwise. Pass `--no-tool-calls` to omit them.
+- Tool results and reasoning are always dropped. The IR's `warnings` array reports how many.
+- Harness-injected context — `<environment_context>`, `<recommended_plugins>`, AGENTS.md
+  instructions — is filtered per content part, so a real prompt sharing a message with
+  injected context survives. Pass `--include-boilerplate` to keep it.
+
+Report the `warnings` array when summarizing a conversion so the user knows what was lost.
 
 ## Safety Rules
 

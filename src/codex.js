@@ -67,6 +67,21 @@ function extractTextParts(content = []) {
   return parts.join("\n").trim();
 }
 
+// Harness-injected context arrives as its own content part inside a user message:
+// a single self-closing block such as <environment_context>…</environment_context>.
+// Matching that shape, rather than listing tag names, means a tag the harness adds
+// later is filtered without a code change.
+const WRAPPED_BLOCK_PATTERN = /^<([a-z][a-z0-9_-]*)>[\s\S]*<\/\1>$/i;
+const BOILERPLATE_PART_PREFIXES = ["# AGENTS.md instructions"];
+
+function isBoilerplateContentPart(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return true;
+  if (BOILERPLATE_PART_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return true;
+  return WRAPPED_BLOCK_PATTERN.test(trimmed);
+}
+
+// Retained for callers working with an already-joined message body.
 function isBoilerplateUserMessage(text) {
   const trimmed = String(text || "").trim();
   return (
@@ -74,8 +89,27 @@ function isBoilerplateUserMessage(text) {
     trimmed.startsWith("<environment_context>") ||
     trimmed.startsWith("<INSTRUCTIONS>") ||
     trimmed.startsWith("<app-context>") ||
-    trimmed.startsWith("<permissions instructions>")
+    trimmed.startsWith("<permissions instructions>") ||
+    isBoilerplateContentPart(trimmed)
   );
+}
+
+// Filters per content part, so a prompt that shares a message with injected context
+// keeps the prompt instead of discarding the whole message.
+function extractUserText(content = [], includeBoilerplate = false) {
+  const parts = [];
+  for (const item of content) {
+    const text =
+      typeof item?.text === "string"
+        ? item.text
+        : typeof item?.content === "string"
+          ? item.content
+          : "";
+    if (!text) continue;
+    if (!includeBoilerplate && isBoilerplateContentPart(text)) continue;
+    parts.push(text);
+  }
+  return parts.join("\n").trim();
 }
 
 function summarizeCodexSession(filePath, includeBoilerplate = false) {
@@ -93,9 +127,8 @@ function summarizeCodexSession(filePath, includeBoilerplate = false) {
       record.payload?.type === "message" &&
       record.payload.role === "user"
     ) {
-      const text = extractTextParts(record.payload.content);
+      const text = extractUserText(record.payload.content, includeBoilerplate);
       if (!text) continue;
-      if (!includeBoilerplate && isBoilerplateUserMessage(text)) continue;
       userMessages.push(text);
     }
   }
@@ -144,12 +177,77 @@ function resolveCodexSessionTarget({ root, target, includeBoilerplate = false })
   throw new Error(`Could not find Codex session matching: ${target}`);
 }
 
-function parseCodexSession(filePath, includeBoilerplate = false) {
+// Codex wraps shell work in a JS call: tools.exec_command({"cmd":"…", …}).
+// The command itself is the signal; the wrapper is not.
+const CODEX_COMMAND_PATTERN = /\bcmd"?\s*:\s*"((?:[^"\\]|\\.)*)"/;
+// A shell command is the whole signal, so it is kept nearly intact. Other tool
+// inputs are mostly wrapper, so only enough is kept to recognise the call.
+const MAX_COMMAND_LENGTH = 1000;
+const MAX_SOURCE_LENGTH = 300;
+
+function truncate(text, maxLength) {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+// Returns { command } when a shell command was recovered, otherwise { source }.
+function summarizeToolInput(rawInput) {
+  const text = typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput ?? {});
+  const match = CODEX_COMMAND_PATTERN.exec(text);
+  if (match) {
+    let command;
+    try {
+      command = JSON.parse(`"${match[1]}"`);
+    } catch {
+      command = match[1];
+    }
+    return { command: truncate(command, MAX_COMMAND_LENGTH) };
+  }
+  const source = text.trim();
+  return source ? { source: truncate(source, MAX_SOURCE_LENGTH) } : {};
+}
+
+function parseCodexSession(filePath, includeBoilerplate = false, { includeToolCalls = true } = {}) {
   const records = readJsonl(filePath);
   let meta = null;
   let turnContext = null;
   const transcript = [];
+  // Tool *results* and reasoning are deliberately not carried: results dominate a
+  // rollout's bytes while the command that produced them carries the meaning.
+  const dropped = { toolResults: 0, reasoning: 0, toolCalls: 0 };
   for (const record of records) {
+    if (record.type === "response_item" && record.payload?.type === "custom_tool_call_output") {
+      dropped.toolResults += 1;
+      continue;
+    }
+    if (record.type === "response_item" && record.payload?.type === "reasoning") {
+      dropped.reasoning += 1;
+      continue;
+    }
+    if (
+      record.type === "response_item" &&
+      (record.payload?.type === "custom_tool_call" || record.payload?.type === "function_call")
+    ) {
+      if (!includeToolCalls) {
+        dropped.toolCalls += 1;
+        continue;
+      }
+      const input = summarizeToolInput(record.payload.input);
+      if (!input.command && !input.source) continue;
+      transcript.push({
+        role: "assistant",
+        phase: "tool-call",
+        timestamp: record.timestamp || meta?.timestamp || new Date().toISOString(),
+        content: [
+          {
+            type: "tool-call",
+            toolName: record.payload.name || "tool_call",
+            ...(record.payload.call_id ? { toolCallId: record.payload.call_id } : {}),
+            input,
+          },
+        ],
+      });
+      continue;
+    }
     if (record.type === "session_meta" && record.payload) {
       meta = record.payload;
       continue;
@@ -163,11 +261,11 @@ function parseCodexSession(filePath, includeBoilerplate = false) {
       record.payload?.type === "message" &&
       (record.payload.role === "user" || record.payload.role === "assistant")
     ) {
-      const text = extractTextParts(record.payload.content);
+      const text =
+        record.payload.role === "user"
+          ? extractUserText(record.payload.content, includeBoilerplate)
+          : extractTextParts(record.payload.content);
       if (!text) continue;
-      if (record.payload.role === "user" && !includeBoilerplate && isBoilerplateUserMessage(text)) {
-        continue;
-      }
       transcript.push({
         role: record.payload.role,
         text,
@@ -177,12 +275,24 @@ function parseCodexSession(filePath, includeBoilerplate = false) {
     }
   }
 
+  const warnings = [];
+  if (dropped.toolResults) {
+    warnings.push(`Dropped ${dropped.toolResults} tool result(s): outputs are not carried across the bridge.`);
+  }
+  if (dropped.reasoning) {
+    warnings.push(`Dropped ${dropped.reasoning} reasoning item(s): not represented in the transcript.`);
+  }
+  if (dropped.toolCalls) {
+    warnings.push(`Dropped ${dropped.toolCalls} tool call(s) because tool calls were disabled.`);
+  }
+
   return {
     filePath,
     sessionId: meta?.id || path.basename(filePath, ".jsonl"),
     meta,
     turnContext,
     transcript,
+    warnings,
     originalCwd: meta?.cwd || turnContext?.cwd || process.cwd(),
     model: turnContext?.model || "gpt-5.4",
     reasoningEffort: turnContext?.collaboration_mode?.settings?.reasoning_effort || null,
@@ -253,4 +363,8 @@ module.exports = {
   resolveCodexSessionTarget,
   parseCodexSession,
   copyCodexSession,
+  extractUserText,
+  isBoilerplateContentPart,
+  isBoilerplateUserMessage,
+  summarizeToolInput,
 };

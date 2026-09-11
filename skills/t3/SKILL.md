@@ -1,7 +1,7 @@
 ---
 author: David Mashburn
 created_at: 2026-04-22T09:58:00Z
-modified_at: 2026-07-15T01:18:18Z
+modified_at: 2026-09-11T20:00:00Z
 generated_by: Codex
 generated_for: David Mashburn
 reviewed_by:
@@ -31,14 +31,28 @@ Use this skill when the user asks to:
 
 For agent-driven reads, append `--json`. Use `search` to resolve an exact ID and `show <ID> --json` to inspect canonical IR before proposing a write. Parse the JSON envelope instead of human-readable output.
 
+Prefer `search` over `last`. `last` resolves to whichever thread was touched most recently,
+which is frequently not the one the user means. T3 search also matches message bodies.
+
+- Find a thread by title, prompt, or message text:
+  - `threadbridge t3 search "<QUERY>" --db-path ~/.t3/userdata/state.sqlite --json`
 - List threads:
   - `threadbridge t3 list --db-path ~/.t3/userdata/state.sqlite --limit <N>`
+- Inspect a thread as canonical IR without writing anything:
+  - `threadbridge t3 show <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --json`
 - Cross-env copy:
   - `threadbridge t3 copy <THREAD|last> --source-db-path ~/.t3/dev/state.sqlite --db-path ~/.t3/userdata/state.sqlite --busy-timeout-ms 5000 --lock-retries 20 --retry-delay-ms 500`
 - Import from Codex:
   - `threadbridge codex to-t3 <SESSION|last> --root ~/.codex/sessions --db-path ~/.t3/userdata/state.sqlite`
 - Export to Codex:
   - `threadbridge t3 to-codex <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --root ~/.codex/sessions`
+
+## Fidelity when importing from Codex
+
+`codex to-t3` carries the conversation plus the commands that were run, not tool output or
+reasoning. The IR's `warnings` array reports the counts that were dropped — surface it when
+summarizing, so the user knows the imported thread has the narrative and the commands but
+not the command output.
 
 ## Safety Rules
 

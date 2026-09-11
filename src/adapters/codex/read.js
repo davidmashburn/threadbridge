@@ -1,10 +1,11 @@
 const { parseCodexSession, resolveCodexSessionTarget } = require("../../codex");
 const { createIrFromTranscriptSession } = require("../../ir");
 
-function readCodexSessionAsIr({ root, target, includeBoilerplate = false }) {
+function readCodexSessionAsIr({ root, target, includeBoilerplate = false, includeToolCalls = true }) {
   const sourceFile = resolveCodexSessionTarget({ root, target, includeBoilerplate });
-  const session = parseCodexSession(sourceFile, includeBoilerplate);
+  const session = parseCodexSession(sourceFile, includeBoilerplate, { includeToolCalls });
   return createIrFromTranscriptSession({
+    warnings: session.warnings,
     harness: "codex",
     sessionId: session.sessionId,
     filePath: session.filePath,

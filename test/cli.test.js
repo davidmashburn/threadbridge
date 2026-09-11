@@ -6,7 +6,15 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { formatMatchExcerpt, parseArgs, searchT3Threads } = require("../src/cli");
-const { copyCodexSession, listCodexSessions, resolveCodexSessionTarget } = require("../src/codex");
+const {
+  copyCodexSession,
+  extractUserText,
+  isBoilerplateContentPart,
+  listCodexSessions,
+  parseCodexSession,
+  resolveCodexSessionTarget,
+  summarizeToolInput,
+} = require("../src/codex");
 const { mapTranscriptToTurns, withLockRetries: bridgeWithLockRetries } = require("../src/bridge");
 const {
   copyClaudeSession,
@@ -865,6 +873,84 @@ test("resolveCodexSessionTarget finds the newest session in a nested root", () =
       "utf8",
     );
     assert.equal(resolveCodexSessionTarget({ root, target: "last" }), path.join(nested, "alpha.jsonl"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("isBoilerplateContentPart matches any self-closing harness block, not a fixed list", () => {
+  assert.equal(isBoilerplateContentPart("<environment_context>\ncwd\n</environment_context>"), true);
+  // A tag the harness introduced after this code was written.
+  assert.equal(isBoilerplateContentPart("<recommended_plugins>\nAirtable\n</recommended_plugins>"), true);
+  assert.equal(isBoilerplateContentPart("# AGENTS.md instructions for /repo"), true);
+  assert.equal(isBoilerplateContentPart("Please fix the failing test"), false);
+  assert.equal(isBoilerplateContentPart("Compare <a> and <b> in the parser"), false);
+});
+
+test("extractUserText keeps the prompt when it shares a message with injected context", () => {
+  const content = [
+    { type: "input_text", text: "<recommended_plugins>\nAirtable\n</recommended_plugins>" },
+    { type: "input_text", text: "Make a new ticket for Page Shuffle" },
+    { type: "input_text", text: "<environment_context>\n<cwd>/repo</cwd>\n</environment_context>" },
+  ];
+  assert.equal(extractUserText(content), "Make a new ticket for Page Shuffle");
+  assert.equal(extractUserText(content, true).includes("recommended_plugins"), true);
+});
+
+test("summarizeToolInput recovers a shell command and falls back to the raw source", () => {
+  const wrapped = 'const r = await tools.exec_command({"cmd":"just lint main ui","workdir":"/repo"});';
+  assert.deepEqual(summarizeToolInput(wrapped), { command: "just lint main ui" });
+  assert.deepEqual(summarizeToolInput('await tools.view_image({path:"/tmp/a.png"})'), {
+    source: 'await tools.view_image({path:"/tmp/a.png"})',
+  });
+});
+
+test("parseCodexSession carries tool calls and reports what it dropped", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "threadbridge-codex-tools-"));
+  try {
+    const sessionPath = path.join(root, "session.jsonl");
+    const records = [
+      { type: "session_meta", payload: { id: "s1", timestamp: "2026-05-15T12:00:00.000Z" } },
+      {
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ text: "run the linter" }] },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          name: "exec",
+          call_id: "c1",
+          input: 'await tools.exec_command({"cmd":"just lint main ui"});',
+        },
+      },
+      { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "c1", output: "x".repeat(5000) } },
+      { type: "response_item", payload: { type: "reasoning", summary: [] } },
+    ];
+    fs.writeFileSync(sessionPath, records.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+
+    const session = parseCodexSession(sessionPath);
+    const toolCalls = session.transcript.filter((entry) => entry.phase === "tool-call");
+    assert.equal(toolCalls.length, 1);
+    assert.deepEqual(toolCalls[0].content[0].input, { command: "just lint main ui" });
+    assert.equal(toolCalls[0].content[0].toolCallId, "c1");
+    // The 5000-character output must not ride along.
+    assert.equal(JSON.stringify(session.transcript).includes("xxxxx"), false);
+    assert.equal(
+      session.warnings.some((w) => w.includes("1 tool result")),
+      true,
+    );
+    assert.equal(
+      session.warnings.some((w) => w.includes("1 reasoning item")),
+      true,
+    );
+
+    const withoutTools = parseCodexSession(sessionPath, false, { includeToolCalls: false });
+    assert.equal(withoutTools.transcript.filter((e) => e.phase === "tool-call").length, 0);
+    assert.equal(
+      withoutTools.warnings.some((w) => w.includes("1 tool call(s) because tool calls were disabled")),
+      true,
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
