@@ -59,26 +59,26 @@ function usage() {
 
   threadbridge claude list [PROJECT_PATH] [--limit N] [--json]
   threadbridge claude search QUERY [PROJECT_PATH] [--limit N] [--json]
-  threadbridge claude show [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--json]
+  threadbridge claude show [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--no-tool-calls] [--json]
   threadbridge claude copy [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--dest-project-path DIR] [--new-session-id ID]
   threadbridge claude to-t3 [SESSION_ID|SESSION_PATH|last] [--project-path DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
   threadbridge cursor list [--limit N] [--json]
   threadbridge cursor search QUERY [--limit N] [--json]
-  threadbridge cursor show [CHAT_ID|COMPOSER_ID|last] [--json]
+  threadbridge cursor show [CHAT_ID|COMPOSER_ID|last] [--no-tool-calls] [--json]
   threadbridge cursor copy [CHAT_ID|last] [--dest-chat-id ID]
   threadbridge cursor to-t3 [CHAT_ID|COMPOSER_ID|last] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
   (cursor list shows both ACP sessions [acp] and Composer threads [composer])
 
   threadbridge opencode list [--root DIR] [--limit N] [--json]
   threadbridge opencode search QUERY [--root DIR] [--limit N] [--json]
-  threadbridge opencode show [SESSION_ID|SESSION_PATH|last] [--root DIR] [--json]
+  threadbridge opencode show [SESSION_ID|SESSION_PATH|last] [--root DIR] [--no-tool-calls] [--json]
   threadbridge opencode copy [SESSION_ID|SESSION_PATH|last] [--root DIR] [--dest-root DIR] [--new-session-id ID]
   threadbridge opencode to-t3 [SESSION_ID|SESSION_PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
   threadbridge antigravity list [--root DIR] [--limit N] [--json]
   threadbridge antigravity search QUERY [--root DIR] [--limit N] [--json]
-  threadbridge antigravity show [CONVERSATION_ID|PATH|last] [--root DIR] [--json]
+  threadbridge antigravity show [CONVERSATION_ID|PATH|last] [--root DIR] [--no-tool-calls] [--json]
   threadbridge antigravity to-t3 [CONVERSATION_ID|PATH|last] [--root DIR] [--db-path PATH] [--title TEXT] [--workspace-root DIR] [--project-id ID] [--busy-timeout-ms N] [--lock-retries N] [--retry-delay-ms N] [--no-backup]
 
 Defaults:
@@ -616,14 +616,28 @@ function readThreadAsIr(args) {
     });
   }
   if (args.adapter === "claude") {
-    return readClaudeSessionAsIr({ projectPath: args.projectPath, target: args.target });
+    return readClaudeSessionAsIr({
+      projectPath: args.projectPath,
+      target: args.target,
+      includeToolCalls: args.includeToolCalls,
+    });
   }
-  if (args.adapter === "cursor") return readCursorChatAsIr({ target: args.target });
+  if (args.adapter === "cursor") {
+    return readCursorChatAsIr({ target: args.target, includeToolCalls: args.includeToolCalls });
+  }
   if (args.adapter === "opencode") {
-    return readOpenCodeSessionAsIr({ root: args.opencodeRoot, target: args.target });
+    return readOpenCodeSessionAsIr({
+      root: args.opencodeRoot,
+      target: args.target,
+      includeToolCalls: args.includeToolCalls,
+    });
   }
   if (args.adapter === "antigravity") {
-    return readAntigravityConversationAsIr({ root: args.antigravityRoot, target: args.target });
+    return readAntigravityConversationAsIr({
+      root: args.antigravityRoot,
+      target: args.target,
+      includeToolCalls: args.includeToolCalls,
+    });
   }
   throw new CliError(`Unsupported adapter '${args.adapter}'.`);
 }

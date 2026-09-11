@@ -20,6 +20,7 @@ const {
   copyClaudeSession,
   exportT3ToClaudeFormat,
   listClaudeSessions,
+  parseClaudeSessionWithContext,
   sanitizeProjectPath,
 } = require("../src/claude");
 const { generateCursorSessionFromT3, parseCursorChat } = require("../src/cursor");
@@ -951,6 +952,76 @@ test("parseCodexSession carries tool calls and reports what it dropped", () => {
       withoutTools.warnings.some((w) => w.includes("1 tool call(s) because tool calls were disabled")),
       true,
     );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("summarizeToolInput normalizes structured and string tool inputs", () => {
+  const { summarizeToolInput } = require("../src/ir");
+  assert.deepEqual(summarizeToolInput({ command: "just lint main ui" }), { command: "just lint main ui" });
+  assert.deepEqual(summarizeToolInput({ pattern: "**/*.js" }), { source: '{"pattern":"**/*.js"}' });
+  assert.deepEqual(summarizeToolInput({}), {});
+  assert.equal(summarizeToolInput({ command: "x".repeat(2000) }).command.length, 1000);
+});
+
+test("extractPlainTextFromBlocks renders tool calls so text-only writers keep them", () => {
+  const { extractPlainTextFromBlocks } = require("../src/ir");
+  assert.equal(
+    extractPlainTextFromBlocks([{ type: "tool-call", toolName: "exec", input: { command: "ls -la" } }]),
+    "$ ls -la",
+  );
+  assert.equal(
+    extractPlainTextFromBlocks([{ type: "tool-call", toolName: "glob", input: { source: '{"p":1}' } }]),
+    '[glob] {"p":1}',
+  );
+});
+
+test("sanitizeProjectPath keeps the leading dash Claude Code uses for project directories", () => {
+  assert.equal(sanitizeProjectPath("/Users/x/repo"), "-Users-x-repo");
+});
+
+test("parseClaudeSessionWithContext carries tool_use blocks and drops results", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "threadbridge-claude-tools-"));
+  try {
+    const sessionPath = path.join(root, "session.jsonl");
+    const records = [
+      {
+        type: "user",
+        sessionId: "s1",
+        cwd: "/repo",
+        timestamp: "2026-05-15T12:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "run the linter" }] },
+      },
+      {
+        type: "assistant",
+        sessionId: "s1",
+        timestamp: "2026-05-15T12:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "private" },
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "just lint main ui" } },
+          ],
+        },
+      },
+      {
+        type: "user",
+        sessionId: "s1",
+        timestamp: "2026-05-15T12:00:02.000Z",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "y".repeat(4000) }] },
+      },
+    ];
+    fs.writeFileSync(sessionPath, records.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+
+    const session = parseClaudeSessionWithContext(sessionPath);
+    const calls = session.transcript.filter((e) => e.phase === "tool-call");
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].content[0].input, { command: "just lint main ui" });
+    assert.equal(session.originalCwd, "/repo");
+    assert.equal(JSON.stringify(session.transcript).includes("yyyyy"), false);
+    assert.equal(session.warnings.some((w) => w.includes("1 tool result")), true);
+    assert.equal(session.warnings.some((w) => w.includes("1 thinking block")), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

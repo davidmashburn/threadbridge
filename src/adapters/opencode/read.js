@@ -1,10 +1,11 @@
 const { parseOpenCodeSession, resolveOpenCodeSessionTarget } = require("../../opencode");
 const { createIrFromTranscriptSession } = require("../../ir");
 
-function readOpenCodeSessionAsIr({ root, target }) {
+function readOpenCodeSessionAsIr({ root, target, includeToolCalls = true }) {
   const sourceFile = resolveOpenCodeSessionTarget({ root, target });
-  const session = parseOpenCodeSession(sourceFile);
+  const session = parseOpenCodeSession(sourceFile, { includeToolCalls });
   return createIrFromTranscriptSession({
+    warnings: session.warnings,
     harness: "opencode",
     sessionId: session.sessionId,
     filePath: sourceFile,

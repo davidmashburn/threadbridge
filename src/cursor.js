@@ -4,6 +4,17 @@ const path = require("path");
 const crypto = require("crypto");
 const zlib = require("zlib");
 const { DatabaseSync } = require("node:sqlite");
+const { summarizeToolInput } = require("./ir");
+
+// Cursor stores tool arguments as a JSON string inside the bubble.
+function parseMaybeJsonString(value) {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 
 const DEFAULT_CURSOR_ROOT = path.join(os.homedir(), ".cursor");
 const CHATS_ROOT = path.join(DEFAULT_CURSOR_ROOT, "acp-sessions");
@@ -361,7 +372,7 @@ function listCursorChats({ includeHidden = false, limit = 20, composerLimit = nu
   });
 }
 
-function parseCursorChat(chatId) {
+function parseCursorChat(chatId, { includeToolCalls = true } = {}) {
   const chats = listChats();
   const target = chats.find((c) => c.chatId === chatId || c.chatDir.endsWith(chatId));
 
@@ -371,7 +382,7 @@ function parseCursorChat(chatId) {
     if (fs.existsSync(globalDb)) {
       try {
         const resolved = resolveComposerTarget(chatId);
-        return parseComposerThread(resolved);
+        return parseComposerThread(resolved, { includeToolCalls });
       } catch {}
     }
     throw new Error(`Cursor chat not found in ACP sessions or Composer threads: ${chatId}`);
@@ -639,7 +650,8 @@ function listComposerThreads({ limit = 10, globalStateDbPath = null } = {}) {
   }
 }
 
-function parseComposerThread(composerId, { globalStateDbPath = null } = {}) {
+function parseComposerThread(composerId, { globalStateDbPath = null, includeToolCalls = true } = {}) {
+  const dropped = { toolResults: 0, toolCalls: 0 };
   const dbPath = globalStateDbPath || resolveCursorGlobalStateDb();
   if (!fs.existsSync(dbPath)) {
     throw new Error(`Cursor global state DB not found: ${dbPath}`);
@@ -662,6 +674,34 @@ function parseComposerThread(composerId, { globalStateDbPath = null } = {}) {
       try { bubble = JSON.parse(row.json); } catch { continue; }
 
       const { type, text, createdAt } = bubble;
+
+      // A bubble can hold a tool call with no text of its own; skipping on empty
+      // text dropped the work silently.
+      const former = bubble.toolFormerData;
+      if (former && typeof former === "object") {
+        if (former.result !== undefined) dropped.toolResults += 1;
+        if (!includeToolCalls) {
+          dropped.toolCalls += 1;
+        } else {
+          const input = summarizeToolInput(parseMaybeJsonString(former.rawArgs ?? former.params));
+          if (input.command || input.source) {
+            transcript.push({
+              role: "assistant",
+              phase: "tool-call",
+              timestamp: createdAt,
+              content: [
+                {
+                  type: "tool-call",
+                  toolName: former.name || "tool_call",
+                  ...(former.toolCallId ? { toolCallId: String(former.toolCallId) } : {}),
+                  input,
+                },
+              ],
+            });
+          }
+        }
+      }
+
       if (!text || text.length === 0) continue;
 
       let role;
@@ -683,6 +723,14 @@ function parseComposerThread(composerId, { globalStateDbPath = null } = {}) {
       title: title || `Composer ${composerId.slice(0, 8)}`,
       transcript,
       source: "composer",
+      warnings: [
+        ...(dropped.toolResults
+          ? [`Dropped ${dropped.toolResults} tool result(s): outputs are not carried across the bridge.`]
+          : []),
+        ...(dropped.toolCalls
+          ? [`Dropped ${dropped.toolCalls} tool call(s) because tool calls were disabled.`]
+          : []),
+      ],
     };
   } finally {
     db.close();

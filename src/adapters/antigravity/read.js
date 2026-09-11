@@ -1,8 +1,8 @@
 const { parseAntigravityConversation } = require("../../antigravity");
 const { createIrFromTranscriptSession } = require("../../ir");
 
-function readAntigravityConversationAsIr({ root, target }) {
-  const session = parseAntigravityConversation({ root, target });
+function readAntigravityConversationAsIr({ root, target, includeToolCalls = true }) {
+  const session = parseAntigravityConversation({ root, target, includeToolCalls });
   return createIrFromTranscriptSession({
     harness: "antigravity",
     sessionId: session.conversationId,

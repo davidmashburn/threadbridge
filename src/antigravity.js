@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { summarizeToolInput } = require("./ir");
 
 const DEFAULT_ANTIGRAVITY_ROOT = path.join(os.homedir(), ".gemini", "antigravity");
 const ANTIGRAVITY_ROOT_CANDIDATES = [
@@ -180,10 +181,12 @@ function isCompletedRecord(record) {
   return !status || status === "DONE";
 }
 
-function visibleTranscriptFromRecords(records, fallbackTimestamp) {
+function visibleTranscriptFromRecords(records, fallbackTimestamp, { includeToolCalls = true } = {}) {
   const transcript = [];
   let skippedPrivateOrSystem = 0;
   let skippedInProgress = 0;
+  let carriedToolCalls = 0;
+  let droppedToolCalls = 0;
 
   for (const { record, lineNumber } of records) {
     if (!isCompletedRecord(record)) {
@@ -213,10 +216,34 @@ function visibleTranscriptFromRecords(records, fallbackTimestamp) {
     }
 
     if (source === "MODEL" && (type === "PLANNER_RESPONSE" || type === "GENERIC")) {
+      // Planner tool calls are carried as tool-call blocks; private thinking is not.
+      const toolCalls = Array.isArray(record.tool_calls) ? record.tool_calls : [];
+      if (includeToolCalls) {
+        for (const call of toolCalls) {
+          if (!call || typeof call !== "object") continue;
+          const input = summarizeToolInput(call.args ?? call.arguments);
+          if (!input.command && !input.source) continue;
+          transcript.push({
+            role: "assistant",
+            phase: "tool-call",
+            timestamp,
+            metadata,
+            content: [
+              {
+                type: "tool-call",
+                toolName: call.name || "tool_call",
+                input,
+              },
+            ],
+          });
+          carriedToolCalls += 1;
+        }
+      } else {
+        droppedToolCalls += toolCalls.length;
+      }
+
       const text = extractText(record.content || record.text || record.message).trim();
       if (!text) {
-        // Planner thinking and tool calls are intentionally omitted. T3's transcript
-        // writer has no portable representation for either private reasoning or calls.
         skippedPrivateOrSystem += 1;
         continue;
       }
@@ -233,7 +260,7 @@ function visibleTranscriptFromRecords(records, fallbackTimestamp) {
     skippedPrivateOrSystem += 1;
   }
 
-  return { transcript, skippedPrivateOrSystem, skippedInProgress };
+  return { transcript, skippedPrivateOrSystem, skippedInProgress, carriedToolCalls, droppedToolCalls };
 }
 
 function resolveAntigravityConversationTarget({ root, target }) {
@@ -284,7 +311,10 @@ function resolveAntigravityConversationTarget({ root, target }) {
   throw new Error(`Could not find Antigravity conversation matching: ${target}`);
 }
 
-function parseAntigravityTranscript(filePath, { conversationId = idFromPath(filePath), databasePath = null } = {}) {
+function parseAntigravityTranscript(
+  filePath,
+  { conversationId = idFromPath(filePath), databasePath = null, includeToolCalls = true } = {},
+) {
   if (!existsFile(filePath)) {
     throw new Error(`Antigravity transcript not found: ${filePath}`);
   }
@@ -292,10 +322,8 @@ function parseAntigravityTranscript(filePath, { conversationId = idFromPath(file
   const stat = fs.statSync(filePath);
   const fallbackTimestamp = stat.mtime.toISOString();
   const { records, warnings: parseWarnings } = readJsonl(filePath);
-  const { transcript, skippedPrivateOrSystem, skippedInProgress } = visibleTranscriptFromRecords(
-    records,
-    fallbackTimestamp,
-  );
+  const { transcript, skippedPrivateOrSystem, skippedInProgress, carriedToolCalls, droppedToolCalls } =
+    visibleTranscriptFromRecords(records, fallbackTimestamp, { includeToolCalls });
   const firstRecordTimestamp = records[0]
     ? normalizeTimestamp(records[0].record.created_at || records[0].record.createdAt || records[0].record.timestamp, fallbackTimestamp)
     : fallbackTimestamp;
@@ -324,6 +352,8 @@ function parseAntigravityTranscript(filePath, { conversationId = idFromPath(file
     warnings: [
       "Antigravity system events and private model reasoning were omitted from the portable transcript.",
       "Antigravity tool results were represented as assistant text for T3 transcript import.",
+      ...(carriedToolCalls ? [`Carried ${carriedToolCalls} planner tool call(s) as tool-call blocks.`] : []),
+      ...(droppedToolCalls ? [`Dropped ${droppedToolCalls} tool call(s) because tool calls were disabled.`] : []),
       ...parseWarnings,
     ],
     extensions: {

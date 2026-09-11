@@ -1,10 +1,11 @@
 const { parseClaudeSessionWithContext, resolveClaudeSession } = require("../../claude");
 const { createIrFromTranscriptSession } = require("../../ir");
 
-function readClaudeSessionAsIr({ projectPath, target }) {
+function readClaudeSessionAsIr({ projectPath, target, includeToolCalls = true }) {
   const sourceFile = resolveClaudeSession(projectPath, target);
-  const session = parseClaudeSessionWithContext(sourceFile);
+  const session = parseClaudeSessionWithContext(sourceFile, false, { includeToolCalls });
   return createIrFromTranscriptSession({
+    warnings: session.warnings,
     harness: "claude",
     sessionId: session.sessionId,
     filePath: session.filePath,

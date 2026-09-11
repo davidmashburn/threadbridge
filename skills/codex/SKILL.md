@@ -66,7 +66,7 @@ Prefer `search` over `last`. `last` resolves to whichever session was touched mo
 - `--new-model-selection`: Full JSON for advanced config
 - `--new-project-id`: Target workspace/project ID
 
-## What a bridged Codex thread contains
+## What a bridged thread contains
 
 A conversion carries the conversation plus the commands that were run. It does not carry
 tool output or reasoning, because outputs dominate a rollout's size while the command that
@@ -78,6 +78,8 @@ produced them carries the meaning.
 - Harness-injected context — `<environment_context>`, `<recommended_plugins>`, AGENTS.md
   instructions — is filtered per content part, so a real prompt sharing a message with
   injected context survives. Pass `--include-boilerplate` to keep it.
+- This applies to every harness that records tool calls: Codex, Claude, Cursor, OpenCode,
+  and Antigravity. T3 stores flattened text only, so a T3 read has no calls to carry.
 
 Report the `warnings` array when summarizing a conversion so the user knows what was lost.
 

@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { summarizeToolInput } = require("./ir");
 const crypto = require("crypto");
 
 const DEFAULT_OPENCODE_ROOT = path.join(os.homedir(), ".local", "share", "opencode", "storage");
@@ -91,43 +92,83 @@ function getMessageFiles(sessionId, storageRoot) {
     .sort();
 }
 
-function getMessageText(messageId, storageRoot) {
+function readMessageParts(messageId, storageRoot, dropped, { includeToolCalls = true } = {}) {
   const partDir = path.join(storageRoot, "part", messageId);
-  if (!fs.existsSync(partDir)) return "";
+  if (!fs.existsSync(partDir)) return { text: "", toolCalls: [] };
   const partFiles = fs
     .readdirSync(partDir, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".json"))
     .sort();
-  const texts = partFiles.map((f) => {
+
+  const texts = [];
+  const toolCalls = [];
+  for (const f of partFiles) {
+    let part;
     try {
-      const part = readJsonFile(path.join(partDir, f.name));
-      return part.text || "";
+      part = readJsonFile(path.join(partDir, f.name));
     } catch {
-      return "";
+      continue;
     }
-  });
-  return texts.join("\n").trim();
+    if (part.type === "tool") {
+      // state.output holds the result, which is deliberately not carried.
+      if (part.state && part.state.output !== undefined) dropped.toolResults += 1;
+      if (!includeToolCalls) {
+        dropped.toolCalls += 1;
+        continue;
+      }
+      const input = summarizeToolInput(part.state?.input);
+      if (!input.command && !input.source) continue;
+      toolCalls.push({
+        type: "tool-call",
+        toolName: part.tool || "tool_call",
+        ...(part.callID ? { toolCallId: String(part.callID).trim() } : {}),
+        input,
+      });
+      continue;
+    }
+    if (part.type === "reasoning") {
+      dropped.reasoning += 1;
+      continue;
+    }
+    if (part.type === "text" && typeof part.text === "string") {
+      texts.push(part.text);
+    }
+  }
+  return { text: texts.join("\n").trim(), toolCalls };
 }
 
-function parseOpenCodeSession(sessionFilePath, { root = null } = {}) {
+// Retained for callers that only need the flattened message body.
+function getMessageText(messageId, storageRoot) {
+  const dropped = { toolResults: 0, reasoning: 0, toolCalls: 0 };
+  return readMessageParts(messageId, storageRoot, dropped, { includeToolCalls: false }).text;
+}
+
+function parseOpenCodeSession(sessionFilePath, { root = null, includeToolCalls = true } = {}) {
   const storageRoot = root || getOpenCodeRoot();
   const session = readJsonFile(sessionFilePath);
   const sessionId = session.id;
   const messageFiles = getMessageFiles(sessionId, storageRoot);
+  const dropped = { toolResults: 0, reasoning: 0, toolCalls: 0 };
 
   const transcript = [];
   for (const msgFile of messageFiles) {
     try {
       const msg = readJsonFile(msgFile);
-      const text = getMessageText(msg.id, storageRoot);
-      if (!text) continue;
-      transcript.push({
-        role: msg.role,
-        text,
-        timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : new Date().toISOString(),
-        model: msg.model?.modelID || "",
-        agent: msg.agent || "",
-      });
+      const { text, toolCalls } = readMessageParts(msg.id, storageRoot, dropped, { includeToolCalls });
+      if (!text && toolCalls.length === 0) continue;
+      const timestamp = msg.time?.created ? new Date(msg.time.created).toISOString() : new Date().toISOString();
+      if (text) {
+        transcript.push({
+          role: msg.role,
+          text,
+          timestamp,
+          model: msg.model?.modelID || "",
+          agent: msg.agent || "",
+        });
+      }
+      for (const block of toolCalls) {
+        transcript.push({ role: "assistant", phase: "tool-call", timestamp, content: [block] });
+      }
     } catch {
       // skip unreadable messages
     }
@@ -146,7 +187,22 @@ function parseOpenCodeSession(sessionFilePath, { root = null } = {}) {
     transcript,
     originalCwd: session.directory || process.cwd(),
     model: transcript.find((t) => t.role === "assistant")?.model || "kimi-k2.5-free",
+    warnings: buildDropWarnings(dropped),
   };
+}
+
+function buildDropWarnings(dropped) {
+  const warnings = [];
+  if (dropped.toolResults) {
+    warnings.push(`Dropped ${dropped.toolResults} tool result(s): outputs are not carried across the bridge.`);
+  }
+  if (dropped.reasoning) {
+    warnings.push(`Dropped ${dropped.reasoning} reasoning part(s): not represented in the transcript.`);
+  }
+  if (dropped.toolCalls) {
+    warnings.push(`Dropped ${dropped.toolCalls} tool call(s) because tool calls were disabled.`);
+  }
+  return warnings;
 }
 
 function generateSessionId() {

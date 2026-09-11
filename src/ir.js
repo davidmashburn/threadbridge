@@ -58,6 +58,25 @@ function normalizeContentBlocks(content, fallbackText = "") {
   return text ? [{ type: "text", text }] : [];
 }
 
+// A shell command is the whole signal and is kept nearly intact. Other tool
+// inputs are mostly wrapper, so only enough is kept to recognise the call.
+const MAX_TOOL_COMMAND_LENGTH = 1000;
+const MAX_TOOL_SOURCE_LENGTH = 300;
+
+function truncateToolText(text, maxLength) {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+// Normalizes a harness tool input into { command } or { source }, or {} when
+// there is nothing worth carrying. Shared by every adapter that reads tool calls.
+function summarizeToolInput(input) {
+  if (input && typeof input === "object" && typeof input.command === "string" && input.command.trim()) {
+    return { command: truncateToolText(input.command.trim(), MAX_TOOL_COMMAND_LENGTH) };
+  }
+  const source = (typeof input === "string" ? input : JSON.stringify(input ?? {})).trim();
+  return source && source !== "{}" ? { source: truncateToolText(source, MAX_TOOL_SOURCE_LENGTH) } : {};
+}
+
 function extractPlainTextFromBlocks(blocks = []) {
   return blocks
     .flatMap((block) => {
@@ -351,5 +370,6 @@ module.exports = {
   normalizeContentBlocks,
   normalizeRole,
   parseMaybeJson,
+  summarizeToolInput,
   validateIr,
 };

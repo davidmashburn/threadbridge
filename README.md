@@ -230,6 +230,17 @@ tool output or reasoning: outputs dominate a rollout's bytes, while the command 
 produced them carries the meaning. On one real Codex thread that is ~49K tokens of
 transcript instead of the multi-megabyte rollout, with the commands intact.
 
+Every harness that records tool calls now carries them:
+
+| Harness | Source of tool calls | Verified on real data |
+|---------|----------------------|-----------------------|
+| Codex | `custom_tool_call` / `function_call` | 597 calls |
+| Claude | `tool_use` content blocks | 296 calls |
+| Cursor | `toolFormerData` on composer bubbles | 5,067 calls |
+| OpenCode | `tool` parts (`state.input`) | 482 calls |
+| Antigravity | `tool_calls` on planner responses | 12 calls |
+| T3 | — | stores flattened text only, so there is nothing to read |
+
 - Tool calls become `tool-call` blocks, rendered in text as `$ <command>` for shell work and
   `[<tool>] <input>` otherwise. Shell commands are recovered from the harness wrapper and
   kept up to 1000 characters; other tool inputs are truncated to 300.
