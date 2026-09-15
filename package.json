@@ -1,6 +1,6 @@
 {
   "name": "@davmash/threadbridge",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Thread interconversion toolkit for AI harnesses",
   "license": "MIT",
   "type": "commonjs",
