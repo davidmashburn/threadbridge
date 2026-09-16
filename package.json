@@ -3,6 +3,14 @@
   "version": "0.3.0",
   "description": "Thread interconversion toolkit for AI harnesses",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidmashburn/threadbridge.git"
+  },
+  "homepage": "https://github.com/davidmashburn/threadbridge#readme",
+  "bugs": {
+    "url": "https://github.com/davidmashburn/threadbridge/issues"
+  },
   "type": "commonjs",
   "bin": {
     "threadbridge": "./bin/threadbridge.js"

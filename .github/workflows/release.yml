@@ -47,6 +47,21 @@ jobs:
           fi
           echo "Releasing $pkg"
 
+      # Provenance cross-checks repository.url against the OIDC claim and rejects
+      # the upload if they disagree, which only surfaces at publish time.
+      - name: Verify repository.url matches this repository
+        run: |
+          expected="https://github.com/${GITHUB_REPOSITORY}"
+          actual="$(node -p "
+            const u = (require('./package.json').repository || {}).url || '';
+            u.replace(/^git\+/, '').replace(/\.git$/, '')
+          ")"
+          if [ "$actual" != "$expected" ]; then
+            echo "package.json repository.url is '$actual', expected '$expected'" >&2
+            exit 1
+          fi
+          echo "repository.url OK: $actual"
+
       - name: Check syntax and run tests
         run: npm run check
 
