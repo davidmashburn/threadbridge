@@ -1,13 +1,17 @@
 const { DatabaseSync } = require("node:sqlite");
 const { createThreadbridgeIr, parseMaybeJson } = require("../../ir");
 const { ensureDbExists, resolveThreadTarget, buildSnapshot } = require("../../t3-copy");
-const { hasOrchestrationV2Projection } = require("./storage");
+const { hasOrchestrationV2Projection, hasPendingV1Transcript } = require("./storage");
 const { readT3V2ThreadAsIr } = require("./read-v2");
 
 function readT3ThreadAsIr({ dbPath, target, includeRuntime = false }) {
   const resolvedDbPath = ensureDbExists(dbPath);
   const threadId = resolveThreadTarget({ sourceDbPath: resolvedDbPath, target });
-  if (hasOrchestrationV2Projection(resolvedDbPath)) {
+  // A migrated shell can contain only preview messages until T3 imports its
+  // transcript. After that import, v2 is authoritative even if v1 rows remain.
+  const preferV1Snapshot = hasPendingV1Transcript(resolvedDbPath, threadId);
+
+  if (!preferV1Snapshot && hasOrchestrationV2Projection(resolvedDbPath)) {
     const v2Ir = readT3V2ThreadAsIr({
       dbPath: resolvedDbPath,
       threadId,
@@ -17,6 +21,7 @@ function readT3ThreadAsIr({ dbPath, target, includeRuntime = false }) {
       return v2Ir;
     }
   }
+
   const snapshot = buildSnapshot({ sourceDbPath: resolvedDbPath, sourceThreadId: threadId });
 
   const db = new DatabaseSync(resolvedDbPath, { readonly: true });

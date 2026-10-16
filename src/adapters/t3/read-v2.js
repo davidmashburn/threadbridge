@@ -1,6 +1,142 @@
 const { DatabaseSync } = require("node:sqlite");
-const { createThreadbridgeIr } = require("../../ir");
-const { parseMaybeJson, textFromPayloadJson } = require("./storage");
+const { createThreadbridgeIr, parseMaybeJson } = require("../../ir");
+const {
+  parseMaybeJson: parseStorageJson,
+  textFromPayloadJson,
+  attachmentsFromPayloadJson,
+  planMarkdownFromV2Payload,
+} = require("./storage");
+
+function tableExists(db, name) {
+  const row = db
+    .prepare(`
+      SELECT 1 AS ok
+      FROM sqlite_master
+      WHERE type = 'table' AND name = ?
+      LIMIT 1
+    `)
+    .get(name);
+  return Boolean(row);
+}
+
+function readV2Activities(db, threadId) {
+  if (!tableExists(db, "projection_thread_activities")) {
+    return [];
+  }
+  return db
+    .prepare(`
+      SELECT
+        activity_id AS activityId,
+        turn_id AS turnId,
+        tone,
+        kind,
+        summary,
+        payload_json AS payloadJson,
+        created_at AS createdAt,
+        sequence
+      FROM projection_thread_activities
+      WHERE thread_id = ?
+      ORDER BY sequence ASC, created_at ASC, activity_id ASC
+    `)
+    .all(threadId)
+    .map((row) => ({
+      activityId: row.activityId,
+      turnId: row.turnId,
+      tone: row.tone,
+      kind: row.kind,
+      summary: row.summary,
+      payload: parseMaybeJson(row.payloadJson) || {},
+      createdAt: row.createdAt,
+      sequence: row.sequence,
+    }));
+}
+
+function readV2Plans(db, threadId) {
+  if (!tableExists(db, "orchestration_v2_projection_plans")) {
+    return [];
+  }
+  return db
+    .prepare(`
+      SELECT
+        plan_id AS planId,
+        run_id AS runId,
+        kind,
+        status,
+        payload_json AS payloadJson
+      FROM orchestration_v2_projection_plans
+      WHERE thread_id = ?
+      ORDER BY plan_id ASC
+    `)
+    .all(threadId)
+    .map((row) => {
+      const payload = parseStorageJson(row.payloadJson) || {};
+      const updatedAt = payload.updatedAt || payload.createdAt || new Date().toISOString();
+      return {
+        planId: row.planId,
+        turnId: row.runId || null,
+        markdown: planMarkdownFromV2Payload(row.payloadJson),
+        createdAt: payload.createdAt || updatedAt,
+        updatedAt,
+        implementedAt: payload.implementedAt || null,
+        implementationThreadId: payload.implementationThreadId || null,
+        metadata: {
+          kind: row.kind,
+          status: row.status,
+        },
+      };
+    });
+}
+
+function readV2Runtime(db, threadId, includeRuntime) {
+  if (!includeRuntime) {
+    return null;
+  }
+  if (
+    !tableExists(db, "orchestration_v2_projection_provider_session_bindings")
+    || !tableExists(db, "orchestration_v2_projection_provider_sessions")
+  ) {
+    return null;
+  }
+  const binding = db
+    .prepare(`
+      SELECT
+        bindings.provider_session_id AS providerSessionId,
+        sessions.provider AS provider,
+        sessions.status AS status,
+        sessions.model AS model,
+        sessions.updated_at AS updatedAt,
+        sessions.payload_json AS payloadJson,
+        sessions.driver AS driver,
+        sessions.provider_instance_id AS providerInstanceId
+      FROM orchestration_v2_projection_provider_session_bindings AS bindings
+      INNER JOIN orchestration_v2_projection_provider_sessions AS sessions
+        ON sessions.provider_session_id = bindings.provider_session_id
+      WHERE bindings.thread_id = ?
+      ORDER BY sessions.updated_at DESC
+      LIMIT 1
+    `)
+    .get(threadId);
+  if (!binding) {
+    return null;
+  }
+  return {
+    session: {
+      threadId,
+      status: binding.status,
+      providerName: binding.provider,
+      providerInstanceId: binding.providerInstanceId || null,
+      updatedAt: binding.updatedAt,
+    },
+    providerRuntime: {
+      threadId,
+      providerName: binding.provider,
+      adapterKey: binding.driver || binding.provider,
+      status: binding.status,
+      model: binding.model || null,
+      payload: parseMaybeJson(binding.payloadJson) || {},
+    },
+  };
+}
 
 function readT3V2ThreadAsIr({ dbPath, threadId, includeRuntime = false }) {
   const db = new DatabaseSync(dbPath, { readonly: true });
@@ -32,7 +168,7 @@ function readT3V2ThreadAsIr({ dbPath, threadId, includeRuntime = false }) {
       return null;
     }
 
-    const payload = parseMaybeJson(threadRow.payloadJson) || {};
+    const payload = parseStorageJson(threadRow.payloadJson) || {};
     const messageRows = db
       .prepare(`
         SELECT
@@ -63,13 +199,10 @@ function readT3V2ThreadAsIr({ dbPath, threadId, includeRuntime = false }) {
       `)
       .all(threadId);
 
+    const activities = readV2Activities(db, threadId);
+    const plans = readV2Plans(db, threadId);
+    const runtime = readV2Runtime(db, threadId, includeRuntime);
     const warnings = [];
-    if (includeRuntime) {
-      warnings.push({
-        code: "t3_v2_runtime_excluded",
-        message: "Orchestration v2 read does not include provider runtime/session bindings.",
-      });
-    }
 
     return createThreadbridgeIr({
       source: {
@@ -103,7 +236,7 @@ function readT3V2ThreadAsIr({ dbPath, threadId, includeRuntime = false }) {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         turnId: row.runId || null,
-        attachments: [],
+        attachments: attachmentsFromPayloadJson(row.payloadJson),
         isStreaming: false,
       })),
       turns: runRows.map((row) => ({
@@ -122,9 +255,9 @@ function readT3V2ThreadAsIr({ dbPath, threadId, includeRuntime = false }) {
         },
         metadata: {},
       })),
-      activities: [],
-      plans: [],
-      runtime: null,
+      activities,
+      plans,
+      runtime,
       lineage: {
         sourceThreadId: threadId,
       },

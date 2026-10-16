@@ -43,8 +43,8 @@ All skills now support **provider conversion** using the new `t3 copy-to-workspa
 For other harnesses and offline scripts, prefer `--json`. Use `search` to resolve a specific source and `show --json` to inspect canonical IR before proposing a write:
 
 ```bash
-threadbridge t3 search "<query>" --db-path ~/.t3/userdata/state.sqlite --json
-threadbridge t3 show <THREAD_ID> --db-path ~/.t3/userdata/state.sqlite --json
+threadbridge t3 search "<query>" --db-path ~/.t3/userdata/statev2.sqlite --json
+threadbridge t3 show <THREAD_ID> --db-path ~/.t3/userdata/statev2.sqlite --json
 ```
 
 Successful output is `{ "ok": true, "command": "...", "data": ... }`. Failures exit non-zero and emit `{ "ok": false, "error": { "message": "..." } }` on stdout. Do not scrape the human-readable format or stderr warnings.

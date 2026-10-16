@@ -458,6 +458,8 @@ function insertSnapshot({ targetDbPath, snapshot, copyRuntime, titleOverride, bu
 }
 
 function copyThreadBetweenT3Dbs(options) {
+  const { readT3ThreadAsIr } = require("./adapters/t3/read");
+  const { writeIrToT3 } = require("./adapters/t3/write");
   const {
     sourceDbPath,
     targetDbPath,
@@ -479,62 +481,43 @@ function copyThreadBetweenT3Dbs(options) {
     sourceDbPath: resolvedSource,
     target,
   });
-
-  const snapshot = buildSnapshot({
-    sourceDbPath: resolvedSource,
-    sourceThreadId,
+  const ir = readT3ThreadAsIr({
+    dbPath: resolvedSource,
+    target: sourceThreadId,
+    includeRuntime: copyRuntime,
   });
-
-  const actualNewThreadId = newThreadId || crypto.randomUUID();
-  const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
-  
-  // Update project if specified
-  if (newProjectId) {
-    remapped.thread.project_id = newProjectId;
-    remapped.thread.title = title || remapped.thread.title;
-  }
-  
-  // Update model selection if specified
-  if (newModelSelection) {
-    remapped.thread.model_selection_json = newModelSelection;
-  }
-  
-  const retryConfig = { retries: lockRetries, retryDelayMs };
-  const backupPath = backup && sourceDbPath === targetDbPath
-    ? withLockRetries(() => backupSqlite(resolvedTarget, busyTimeoutMs), retryConfig)
-    : null;
-
-  withLockRetries(
-    () =>
-      insertSnapshot({
-        targetDbPath: resolvedTarget,
-        snapshot: remapped,
-        copyRuntime,
-        titleOverride: title,
-        busyTimeoutMs,
-        newProjectId,
-        newModelSelection,
-      }),
-    retryConfig,
-  );
+  const receipt = writeIrToT3({
+    ir,
+    dbPath: resolvedTarget,
+    intent: "clone-thread",
+    options: {
+      title,
+      newProjectId,
+      newModelSelection,
+      copyRuntime,
+    },
+    newThreadId,
+    backup,
+    busyTimeoutMs,
+    lockRetries,
+    retryDelayMs,
+  });
 
   return {
     sourceThreadId,
-    newThreadId: actualNewThreadId,
-    title: title || snapshot.thread.title,
+    newThreadId: receipt.createdIds.threadId,
+    title: receipt.details.threadTitle,
     sourceDbPath: resolvedSource,
     targetDbPath: resolvedTarget,
-    backupPath,
-    counts: {
-      messages: remapped.messages.length,
-      turns: remapped.turns.length,
-      activities: remapped.activities.length,
-      proposedPlans: remapped.proposedPlans.length,
-    },
+    backupPath: receipt.backupPath,
+    counts: receipt.counts,
+    warnings: receipt.warnings,
   };
 }
 
 function copyThreadToNewWorkspace(options) {
+  const { readT3ThreadAsIr } = require("./adapters/t3/read");
+  const { writeIrToT3 } = require("./adapters/t3/write");
   const {
     dbPath,
     target,
@@ -556,63 +539,38 @@ function copyThreadToNewWorkspace(options) {
     sourceDbPath: resolvedDbPath,
     target,
   });
-
-  const snapshot = buildSnapshot({
-    sourceDbPath: resolvedDbPath,
-    sourceThreadId,
+  const ir = readT3ThreadAsIr({
+    dbPath: resolvedDbPath,
+    target: sourceThreadId,
+    includeRuntime: copyRuntime,
   });
-
-  const actualNewThreadId = newThreadId || crypto.randomUUID();
-  const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
-  
-  // Set new project
-  remapped.thread.project_id = newProjectId;
-  remapped.thread.title = title || (snapshot.thread.title + ' (new workspace)');
-  
-  // Update provider/model if specified
-  if (newModelSelection) {
-    // Use provided JSON directly
-    remapped.thread.model_selection_json = newModelSelection;
-  } else if (newProvider) {
-    // Build model selection JSON from provider and model
-    const modelSelection = {
-      provider: newProvider,
-      model: newModel || (newProvider === 'opencode' ? 'opencode/big-pickle' : 'gpt-5.4'),
-    };
-    remapped.thread.model_selection_json = JSON.stringify(modelSelection);
-  }
-  
-  const retryConfig = { retries: lockRetries, retryDelayMs };
-  const backupPath = backup
-    ? withLockRetries(() => backupSqlite(resolvedDbPath, busyTimeoutMs), retryConfig)
-    : null;
-
-  withLockRetries(
-    () =>
-      insertSnapshot({
-        targetDbPath: resolvedDbPath,
-        snapshot: remapped,
-        copyRuntime,
-        titleOverride: remapped.thread.title,
-        busyTimeoutMs,
-        newProjectId,
-        newModelSelection: remapped.thread.model_selection_json,
-      }),
-    retryConfig,
-  );
+  const receipt = writeIrToT3({
+    ir,
+    dbPath: resolvedDbPath,
+    intent: "copy-to-workspace",
+    options: {
+      title: title || `${ir.thread.title} (new workspace)`,
+      newProjectId,
+      newProvider,
+      newModel,
+      newModelSelection,
+      copyRuntime,
+    },
+    newThreadId,
+    backup,
+    busyTimeoutMs,
+    lockRetries,
+    retryDelayMs,
+  });
 
   return {
     sourceThreadId,
-    newThreadId: actualNewThreadId,
-    title: remapped.thread.title,
+    newThreadId: receipt.createdIds.threadId,
+    title: receipt.details.threadTitle,
     dbPath: resolvedDbPath,
-    backupPath,
-    counts: {
-      messages: remapped.messages.length,
-      turns: remapped.turns.length,
-      activities: remapped.activities.length,
-      proposedPlans: remapped.proposedPlans.length,
-    },
+    backupPath: receipt.backupPath,
+    counts: receipt.counts,
+    warnings: receipt.warnings,
   };
 }
 

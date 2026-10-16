@@ -16,6 +16,17 @@ const {
   remapSnapshotIds,
   withLockRetries,
 } = require("../../t3-copy");
+const { hasOrchestrationV2Projection } = require("./storage");
+
+function t3WriteWarnings(ir, dbPath) {
+  return [
+    ...ir.warnings,
+    ...(hasOrchestrationV2Projection(dbPath) ? [{
+      code: "t3_legacy_import_required",
+      message: "Wrote legacy projection rows. T3 must run its legacy importer before these appear in v2; live visibility is not verified and a server restart may be required.",
+    }] : []),
+  ];
+}
 
 function createModelSelectionFromIr(ir, intent) {
   if (intent.modelSelection) {
@@ -34,6 +45,7 @@ function importIrTranscriptIntoT3({
   ir,
   dbPath,
   intent,
+  newThreadId = null,
   backup = true,
   busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS,
   lockRetries = DEFAULT_LOCK_RETRIES,
@@ -42,6 +54,13 @@ function importIrTranscriptIntoT3({
   validateIr(ir);
   if (!fs.existsSync(dbPath)) {
     throw new Error(`T3 database not found: ${dbPath}`);
+  }
+  const warnings = t3WriteWarnings(ir, dbPath);
+  if (ir.source.harness === "t3" && !ir.extensions?.t3Snapshot) {
+    warnings.push({
+      code: "t3_transcript_only_copy",
+      message: "Copied message text only; attachments, plans, activities, and runtime bindings are not cloned from the v2 source.",
+    });
   }
 
   const transcript = getTranscriptEntriesFromIr(ir).map((entry, index) => ({
@@ -125,7 +144,7 @@ function importIrTranscriptIntoT3({
   const runtimeMode = ir.thread.runtimeMode || "approval-required";
   const interactionMode = ir.thread.interactionMode || "default";
   const projectTitle = ir.project.title || path.basename(resolvedWorkspaceRoot) || resolvedWorkspaceRoot;
-  const threadId = crypto.randomUUID();
+  const threadId = newThreadId || crypto.randomUUID();
   const activityId = crypto.randomUUID();
 
   const retryConfig = { retries: lockRetries, retryDelayMs };
@@ -168,11 +187,7 @@ function importIrTranscriptIntoT3({
         INSERT INTO projection_projects (
           project_id, title, workspace_root, default_model_selection_json, scripts_json, created_at, updated_at, deleted_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-        ON CONFLICT(project_id) DO UPDATE SET
-          title = excluded.title,
-          workspace_root = excluded.workspace_root,
-          default_model_selection_json = COALESCE(excluded.default_model_selection_json, projection_projects.default_model_selection_json),
-          updated_at = excluded.updated_at
+        ON CONFLICT(project_id) DO NOTHING
       `).run(
         resolvedProjectId,
         projectTitle,
@@ -292,7 +307,7 @@ function importIrTranscriptIntoT3({
       turns: turns.length,
     },
     backupPath,
-    warnings: ir.warnings,
+    warnings,
     details: {
       threadTitle,
       modelSelection: parsedModelSelection,
@@ -317,6 +332,7 @@ function cloneIrThreadIntoT3({
       ir,
       dbPath,
       intent,
+      newThreadId,
       backup,
       busyTimeoutMs,
       lockRetries,
@@ -325,6 +341,7 @@ function cloneIrThreadIntoT3({
   }
 
   const resolvedDbPath = ensureDbExists(dbPath);
+  const warnings = t3WriteWarnings(ir, resolvedDbPath);
   const actualNewThreadId = newThreadId || crypto.randomUUID();
   const snapshot = ir.extensions.t3Snapshot;
   const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
@@ -378,7 +395,7 @@ function cloneIrThreadIntoT3({
       proposedPlans: remapped.proposedPlans.length,
     },
     backupPath,
-    warnings: ir.warnings,
+    warnings,
     details: {
       threadTitle: remapped.thread.title,
     },

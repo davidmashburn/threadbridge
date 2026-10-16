@@ -46,6 +46,41 @@ function textFromPayloadJson(payloadJson) {
   if (typeof parsed.text === "string") {
     return parsed.text;
   }
+  if (parsed.input && typeof parsed.input.text === "string") {
+    return parsed.input.text;
+  }
+  return "";
+}
+
+function attachmentsFromPayloadJson(payloadJson) {
+  const parsed = parseMaybeJson(payloadJson);
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.attachments)) {
+    return [];
+  }
+  return parsed.attachments;
+}
+
+function planMarkdownFromV2Payload(payloadJson) {
+  const parsed = parseMaybeJson(payloadJson);
+  if (!parsed || typeof parsed !== "object") {
+    return "";
+  }
+  if (typeof parsed.planMarkdown === "string") {
+    return parsed.planMarkdown;
+  }
+  if (typeof parsed.markdown === "string") {
+    return parsed.markdown;
+  }
+  if (Array.isArray(parsed.steps)) {
+    return parsed.steps
+      .map((step) => {
+        if (!step || typeof step !== "object") return "";
+        const text = typeof step.text === "string" ? step.text : "";
+        return text ? `- ${text}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
   return "";
 }
 
@@ -116,6 +151,34 @@ function listThreadIndexRows(dbPath) {
   }
 }
 
+function hasPendingV1Transcript(dbPath, threadId) {
+  const db = new DatabaseSync(dbPath, { readonly: true });
+  try {
+    const table = db
+      .prepare(`
+        SELECT 1 AS ok
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'orchestration_v2_legacy_imports'
+        LIMIT 1
+      `)
+      .get();
+    if (!table) {
+      return false;
+    }
+    const row = db
+      .prepare(`
+        SELECT 1 AS ok
+        FROM orchestration_v2_legacy_imports
+        WHERE thread_id = ? AND transcript_imported_at IS NULL
+        LIMIT 1
+      `)
+      .get(threadId);
+    return Boolean(row);
+  } finally {
+    db.close();
+  }
+}
+
 function resolveThreadTargetFromIndex({ rows, target, sourceDbPath }) {
   if (rows.length === 0) {
     throw new Error(`No threads found in source DB: ${sourceDbPath}`);
@@ -150,7 +213,10 @@ module.exports = {
   resolveDefaultT3DbPath,
   parseMaybeJson,
   textFromPayloadJson,
+  attachmentsFromPayloadJson,
+  planMarkdownFromV2Payload,
   listThreadIndexRows,
   mergeThreadIndexRows,
   resolveThreadTargetFromIndex,
+  hasPendingV1Transcript,
 };

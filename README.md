@@ -59,7 +59,9 @@ Prerequisites:
 
 ### Agent and script usage
 
-**T3 Code (Alpha):** the CLI defaults to `~/.t3/userdata/statev2.sqlite` when present (`orchestration_v2_projection_*` tables). Legacy installs may still use `state.sqlite` (v1 `projection_*`). In T3 Code you can also use `t3_thread_search` / `t3_thread_read` (MCP). `t3 copy` still writes v1 projection rows and may not work for v2-only threads.
+**T3 Code (Alpha):** the CLI defaults to `~/.t3/userdata/statev2.sqlite` when present. Reads prefer orchestration v2; legacy threads and shells awaiting transcript migration use the v1 snapshot path. In T3 Code, prefer MCP `t3_thread_search` / `t3_thread_read` for live inspection.
+
+**T3 writes are a legacy compatibility workaround:** `copy` and imports insert v1 `projection_*` rows, not v2 commands or events. T3 must run its legacy importer to make them available in v2; a server restart may be required, and live visibility is not verified by Threadbridge. Receipts warn when writing to a v2 database. Copies from v2 sources currently transfer message text only, excluding attachments, plans, activities, and runtime bindings. Native v2 import through a T3-owned API is not implemented.
 
 Every command accepts `--json`. Successful commands write one JSON object to stdout:
 

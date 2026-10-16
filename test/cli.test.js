@@ -493,6 +493,294 @@ test("t3 show reads orchestration v2 projection threads", () => {
   });
 });
 
+test("copyThreadToNewWorkspace works for orchestration v2-only source threads", () => {
+  withTempDir("threadbridge-t3-v2-copyws-", (root) => {
+    const dbPath = path.join(root, "statev2.sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      createMinimalT3Schema(db);
+      db.exec(`
+        CREATE TABLE orchestration_v2_projection_threads (
+          thread_id TEXT PRIMARY KEY,
+          project_id TEXT,
+          title TEXT,
+          runtime_mode TEXT,
+          interaction_mode TEXT,
+          provider_instance_id TEXT,
+          payload_json TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          deleted_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_messages (
+          message_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          role TEXT,
+          payload_json TEXT,
+          streaming INTEGER,
+          created_at TEXT,
+          updated_at TEXT,
+          run_id TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_runs (
+          run_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          ordinal INTEGER,
+          status TEXT,
+          requested_at TEXT,
+          completed_at TEXT
+        );
+        CREATE TABLE orchestration_v2_legacy_imports (
+          thread_id TEXT PRIMARY KEY,
+          source_updated_at TEXT NOT NULL,
+          shell_imported_at TEXT NOT NULL,
+          transcript_imported_at TEXT,
+          imported_message_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT
+        );
+      `);
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, default_model_selection_json, scripts_json, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+      ).run("project-source", "Source", "/tmp/source", null, "[]", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, default_model_selection_json, scripts_json, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+      ).run("project-target", "Target", "/tmp/target", null, "[]", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, runtime_mode, interaction_mode, provider_instance_id,
+          payload_json, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        "thread-v2-only",
+        "project-source",
+        "V2 only",
+        "approval-required",
+        "default",
+        "claudeAgent",
+        JSON.stringify({ modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-7" } }),
+        "2026-07-01T00:00:00.000Z",
+        "2026-07-01T00:00:00.000Z",
+      );
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, role, payload_json, streaming, created_at, updated_at, run_id
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
+      `).run(
+        "msg-v2",
+        "thread-v2-only",
+        "user",
+        JSON.stringify({ text: "copy me" }),
+        "2026-07-01T00:00:01.000Z",
+        "2026-07-01T00:00:01.000Z",
+      );
+    } finally {
+      db.close();
+    }
+
+    const result = copyThreadToNewWorkspace({
+      dbPath,
+      target: "thread-v2-only",
+      newThreadId: "explicit-copy-id",
+      newProjectId: "project-target",
+      newProvider: "opencode",
+      newModel: "opencode/big-pickle",
+      backup: false,
+    });
+    assert.equal(result.newThreadId, "explicit-copy-id");
+    assert.ok(result.warnings.some((warning) => warning.code === "t3_legacy_import_required"));
+    assert.ok(result.warnings.some((warning) => warning.code === "t3_transcript_only_copy"));
+
+    const targetDb = new DatabaseSync(dbPath, { readonly: true });
+    try {
+      const row = targetDb
+        .prepare("SELECT model_selection_json, title FROM projection_threads WHERE thread_id = ?")
+        .get(result.newThreadId);
+      assert.ok(row);
+      assert.match(row.model_selection_json, /opencode\/big-pickle/);
+      assert.match(row.title, /new workspace/);
+      const message = targetDb
+        .prepare("SELECT text FROM projection_thread_messages WHERE thread_id = ?")
+        .get(result.newThreadId);
+      assert.equal(message.text, "copy me");
+      const project = targetDb.prepare("SELECT title, workspace_root FROM projection_projects WHERE project_id = ?").get("project-target");
+      assert.equal(project.title, "Target");
+      assert.equal(project.workspace_root, "/tmp/target");
+      assert.equal(targetDb.prepare("SELECT COUNT(*) AS n FROM orchestration_v2_legacy_imports").get().n, 0);
+    } finally {
+      targetDb.close();
+    }
+  });
+});
+
+test("t3 read uses v1 only while a v2 shell awaits transcript migration", () => {
+  withTempDir("threadbridge-t3-dual-", (root) => {
+    const dbPath = path.join(root, "dual.sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      createMinimalT3Schema(db);
+      db.exec(`
+        CREATE TABLE orchestration_v2_projection_threads (
+          thread_id TEXT PRIMARY KEY,
+          project_id TEXT,
+          title TEXT,
+          runtime_mode TEXT,
+          interaction_mode TEXT,
+          provider_instance_id TEXT,
+          payload_json TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          deleted_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_messages (
+          message_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          role TEXT,
+          payload_json TEXT,
+          streaming INTEGER,
+          created_at TEXT,
+          updated_at TEXT,
+          run_id TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_runs (
+          run_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          ordinal INTEGER,
+          status TEXT,
+          requested_at TEXT,
+          completed_at TEXT
+        );
+      `);
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run("project-dual", "Dual", "/tmp/dual", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(
+        "INSERT INTO projection_threads (thread_id, project_id, title, created_at, updated_at, deleted_at, runtime_mode, interaction_mode) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+      ).run("thread-dual", "project-dual", "Dual thread", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z", "approval-required", "default");
+      db.prepare(
+        "INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+      ).run("v1-msg", "thread-dual", "user", "from v1", "2026-07-01T00:00:01.000Z", "2026-07-01T00:00:01.000Z");
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, runtime_mode, interaction_mode, provider_instance_id,
+          payload_json, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        "thread-dual",
+        "project-dual",
+        "Dual thread v2 title",
+        "approval-required",
+        "default",
+        "claudeAgent",
+        "{}",
+        "2026-07-01T00:00:00.000Z",
+        "2026-07-02T00:00:00.000Z",
+      );
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, role, payload_json, streaming, created_at, updated_at, run_id
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
+      `).run(
+        "v2-msg",
+        "thread-dual",
+        "user",
+        JSON.stringify({ text: "from v2" }),
+        "2026-07-01T00:00:02.000Z",
+        "2026-07-01T00:00:02.000Z",
+      );
+    } finally {
+      db.close();
+    }
+
+    const { readT3ThreadAsIr } = require("../src/adapters/t3/read");
+    const ir = readT3ThreadAsIr({ dbPath, target: "thread-dual" });
+    assert.ok(ir.extensions.t3OrchestrationV2);
+    assert.equal(ir.messages[0].text, "from v2");
+    assert.equal(ir.capabilities.supportsLosslessClone, false);
+
+    const migrationDb = new DatabaseSync(dbPath);
+    try {
+      migrationDb.exec(`
+        CREATE TABLE orchestration_v2_legacy_imports (
+          thread_id TEXT PRIMARY KEY,
+          transcript_imported_at TEXT
+        );
+        INSERT INTO orchestration_v2_legacy_imports VALUES ('thread-dual', NULL);
+      `);
+      const pending = readT3ThreadAsIr({ dbPath, target: "thread-dual" });
+      assert.ok(pending.extensions.t3Snapshot);
+      assert.equal(pending.messages[0].text, "from v1");
+
+      migrationDb.exec("UPDATE orchestration_v2_legacy_imports SET transcript_imported_at = '2026-07-02T00:00:00.000Z'");
+      const completed = readT3ThreadAsIr({ dbPath, target: "thread-dual" });
+      assert.ok(completed.extensions.t3OrchestrationV2);
+      assert.equal(completed.messages[0].text, "from v2");
+    } finally {
+      migrationDb.close();
+    }
+  });
+});
+
+test("t3 search matches orchestration v2 message bodies", () => {
+  withTempDir("threadbridge-t3-v2-search-", (root) => {
+    const dbPath = path.join(root, "statev2.sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`
+        CREATE TABLE projection_projects (
+          project_id TEXT PRIMARY KEY,
+          title TEXT,
+          workspace_root TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_threads (
+          thread_id TEXT PRIMARY KEY,
+          project_id TEXT,
+          title TEXT,
+          runtime_mode TEXT,
+          interaction_mode TEXT,
+          provider_instance_id TEXT,
+          payload_json TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          deleted_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_messages (
+          message_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          role TEXT,
+          payload_json TEXT,
+          streaming INTEGER,
+          created_at TEXT,
+          updated_at TEXT,
+          run_id TEXT
+        );
+      `);
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run("p1", "P", "/tmp", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, runtime_mode, interaction_mode, provider_instance_id,
+          payload_json, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run("only-v2", "p1", "Unrelated title", "approval-required", "default", null, "{}", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, role, payload_json, streaming, created_at, updated_at, run_id
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
+      `).run("m1", "only-v2", "assistant", JSON.stringify({ text: "unique-v2-body-token" }), "2026-07-01T00:00:01.000Z", "2026-07-01T00:00:01.000Z");
+    } finally {
+      db.close();
+    }
+
+    const rows = searchT3Threads({ dbPath, limit: 5, query: "unique-v2-body-token" });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].threadId, "only-v2");
+    assert.equal(rows[0].matchedRole, "assistant");
+  });
+});
+
 test("t3 search finds message-body matches and ranks title matches first", () => {
   withTempDir("threadbridge-t3-search-", (root) => {
     const dbPath = path.join(root, "state.sqlite");
