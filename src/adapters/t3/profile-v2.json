@@ -1,0 +1,933 @@
+{
+  "release": "v0.1.0",
+  "commit": "81493efb71e8e8244f95d3e9f71d8369654ab151",
+  "migration": 62,
+  "projectionVersion": 2,
+  "tables": {
+    "orchestration_events": [
+      {
+        "name": "sequence",
+        "type": "INTEGER",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "event_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "aggregate_kind",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "stream_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "stream_version",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "event_type",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "occurred_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "command_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "causation_event_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "correlation_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "actor_kind",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "metadata_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "application_event_version",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "1"
+      }
+    ],
+    "orchestration_v2_projection_threads": [
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "project_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "title",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "default_provider",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "runtime_mode",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "interaction_mode",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "active_provider_thread_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "created_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "archived_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "deleted_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider_instance_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_projection_messages": [
+      {
+        "name": "message_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "run_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "node_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "role",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "streaming",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "created_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_projection_turn_items": [
+      {
+        "name": "turn_item_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "run_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "node_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider_thread_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider_turn_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "parent_item_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "ordinal",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "type",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_turn_item_positions": [
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "turn_item_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 2,
+        "dflt_value": null
+      },
+      {
+        "name": "ordinal",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_projection_plans": [
+      {
+        "name": "plan_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "run_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "node_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "kind",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_projection_metadata": [
+      {
+        "name": "projection_name",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "schema_version",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "last_sequence",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "projection_projects": [
+      {
+        "name": "project_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "title",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "workspace_root",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "scripts_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "created_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "deleted_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "default_model_selection_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "default_thread_env_mode",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "favicon_path",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "auto_pull",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "0"
+      },
+      {
+        "name": "project_icon_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "projection_threads": [
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "project_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "title",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "branch",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "worktree_path",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "latest_turn_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "created_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "deleted_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "runtime_mode",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "'full-access'"
+      },
+      {
+        "name": "interaction_mode",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "'default'"
+      },
+      {
+        "name": "model_selection_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "archived_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "latest_user_message_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "pending_approval_count",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "0"
+      },
+      {
+        "name": "pending_user_input_count",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "0"
+      },
+      {
+        "name": "has_actionable_proposed_plan",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "0"
+      },
+      {
+        "name": "settled_override",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "settled_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "snoozed_until",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "snoozed_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "title_regeneration_request_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "title_regeneration_started_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "pinned_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "pin_order_key",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "linked_pull_request_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "unsettled_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "branch_pull_request_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "active_order_key",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "title_state_json",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "auto_settle_disabled_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_projection_runs": [
+      {
+        "name": "run_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "ordinal",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider_thread_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "requested_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "completed_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "provider_instance_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ],
+    "orchestration_v2_effect_outbox": [
+      {
+        "name": "effect_id",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 1,
+        "dflt_value": null
+      },
+      {
+        "name": "command_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "thread_id",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "effect_type",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "payload_json",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "attempt_count",
+        "type": "INTEGER",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": "0"
+      },
+      {
+        "name": "available_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "lease_owner",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "lease_expires_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "created_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "updated_at",
+        "type": "TEXT",
+        "notnull": 1,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "completed_at",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      },
+      {
+        "name": "last_error",
+        "type": "TEXT",
+        "notnull": 0,
+        "pk": 0,
+        "dflt_value": null
+      }
+    ]
+  }
+}

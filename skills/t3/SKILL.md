@@ -37,7 +37,7 @@ When the `t3-code` MCP server is available (T3 Code, Cursor harness with T3 orch
 - Read a thread: `t3_thread_read` with `threadId`, paginate with `afterPosition` / `nextPosition`, and recover long text with `itemId` + `textOffset` when `textTruncated` is true.
 - Mention another thread to the user: `[title](t3-thread://v1/<threadId>)` using the exact `threadId` from the tool.
 
-`threadbridge t3 list|search|show` reads local SQLite (`--db-path`, default `~/.t3/userdata/statev2.sqlite` when present, else `state.sqlite`). T3 Code Alpha uses `orchestration_v2_projection_*`; legacy DBs use `projection_*`. MCP `t3_thread_read` is still fine for in-app handoffs; use threadbridge for IR export and cross-harness work.
+`threadbridge t3 list|search|show` reads local SQLite (`--db-path`, default `~/.t3/userdata/statev2.sqlite` when present, else `state.sqlite`). Supported T3 v2 reads follow canonical turn items, including inherited fork history, inside a SQLite snapshot; legacy DBs use `projection_*`. MCP `t3_thread_read` is still fine for in-app handoffs; use threadbridge for IR export and cross-harness work.
 
 Use the CLI below when you need **canonical Threadbridge IR**, **cross-env copy**, or **export/import to another harness** — not for ordinary “load context from this T3 thread” inside T3 Code.
 
@@ -55,11 +55,11 @@ which is frequently not the one the user means. T3 search also matches message b
 - Inspect a thread as canonical IR without writing anything:
   - `threadbridge t3 show <THREAD|last> --db-path ~/.t3/userdata/statev2.sqlite --json`
 - Cross-env copy:
-  - `threadbridge t3 copy <THREAD|last> --source-db-path ~/.t3/dev/state.sqlite --db-path ~/.t3/userdata/state.sqlite --busy-timeout-ms 5000 --lock-retries 20 --retry-delay-ms 500`
+  - `threadbridge t3 copy <THREAD|last> --source-db-path ~/.t3/dev/statev2.sqlite --db-path ~/.t3/userdata/statev2.sqlite --busy-timeout-ms 5000 --lock-retries 20 --retry-delay-ms 500`
 - Import from Codex:
-  - `threadbridge codex to-t3 <SESSION|last> --root ~/.codex/sessions --db-path ~/.t3/userdata/state.sqlite`
+  - `threadbridge codex to-t3 <SESSION|last> --root ~/.codex/sessions --db-path ~/.t3/userdata/statev2.sqlite`
 - Export to Codex:
-  - `threadbridge t3 to-codex <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --root ~/.codex/sessions`
+  - `threadbridge t3 to-codex <THREAD|last> --db-path ~/.t3/userdata/statev2.sqlite --root ~/.codex/sessions`
 
 ## Fidelity when importing from Codex
 
@@ -71,7 +71,9 @@ not the command output.
 ## Safety Rules
 
 - Always prefer a new target thread ID for recovery copies when collisions are likely.
-- Do not pass `--copy-runtime` unless explicitly requested.
+- Stop T3 before writing v2 databases. Native offline imports support the tested stock v0.1.0 schema; unsupported/stale schemas fail without a legacy fallback.
+- V2 copies preserve portable history with fresh IDs and no execution bindings. Tool/activity records become labelled text; missing attachment files produce receipt warnings.
+- Do not pass `--copy-runtime` unless explicitly requested for a legacy v1 target. It is rejected for v2 targets.
 - Preserve backup behavior for writes.
 - If locks persist, increase retries/backoff before asking user to stop T3.
 

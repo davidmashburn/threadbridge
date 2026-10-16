@@ -53,7 +53,7 @@ function backupSqlite(dbPath, busyTimeoutMs) {
   const backupPath = `${dbPath}.threadbridge-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`;
   const result = spawnSync(
     "sqlite3",
-    ["-cmd", `PRAGMA busy_timeout = ${busyTimeoutMs};`, dbPath, `.backup ${backupPath}`],
+    ["-cmd", `PRAGMA busy_timeout = ${busyTimeoutMs};`, dbPath, `.backup ${JSON.stringify(backupPath)}`],
     { encoding: "utf8" },
   );
   if (result.error || result.status !== 0) {
@@ -477,15 +477,12 @@ function copyThreadBetweenT3Dbs(options) {
 
   const resolvedSource = ensureDbExists(sourceDbPath);
   const resolvedTarget = ensureDbExists(targetDbPath);
-  const sourceThreadId = resolveThreadTarget({
-    sourceDbPath: resolvedSource,
-    target,
-  });
   const ir = readT3ThreadAsIr({
     dbPath: resolvedSource,
-    target: sourceThreadId,
+    target,
     includeRuntime: copyRuntime,
   });
+  const sourceThreadId = ir.source.sourceId;
   const receipt = writeIrToT3({
     ir,
     dbPath: resolvedTarget,
@@ -535,15 +532,12 @@ function copyThreadToNewWorkspace(options) {
   } = options;
 
   const resolvedDbPath = ensureDbExists(dbPath);
-  const sourceThreadId = resolveThreadTarget({
-    sourceDbPath: resolvedDbPath,
-    target,
-  });
   const ir = readT3ThreadAsIr({
     dbPath: resolvedDbPath,
-    target: sourceThreadId,
+    target,
     includeRuntime: copyRuntime,
   });
+  const sourceThreadId = ir.source.sourceId;
   const receipt = writeIrToT3({
     ir,
     dbPath: resolvedDbPath,

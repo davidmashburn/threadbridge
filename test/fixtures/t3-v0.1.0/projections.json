@@ -1,0 +1,646 @@
+[
+  {
+    "id": "thread:fork",
+    "projection": {
+      "thread": {
+        "createdBy": "system",
+        "creationSource": "server",
+        "id": "thread:fork",
+        "projectId": "project:fixture",
+        "title": "thread:fork",
+        "providerInstanceId": "codex",
+        "modelSelection": {
+          "instanceId": "codex",
+          "model": "gpt-5.4"
+        },
+        "runtimeMode": "approval-required",
+        "interactionMode": "default",
+        "branch": null,
+        "worktreePath": null,
+        "activeProviderThreadId": null,
+        "lineage": {
+          "parentThreadId": "thread:parent",
+          "relationshipToParent": "fork",
+          "rootThreadId": "thread:parent"
+        },
+        "forkedFrom": {
+          "type": "run",
+          "threadId": "thread:parent",
+          "runId": "run:parent:1"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z",
+        "archivedAt": null,
+        "settledOverride": null,
+        "settledAt": null,
+        "lastVisitedAt": null,
+        "deletedAt": null
+      },
+      "runs": [
+        {
+          "id": "run:fork:2",
+          "threadId": "thread:fork",
+          "ordinal": 2,
+          "providerInstanceId": "codex",
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "gpt-5.4"
+          },
+          "providerThreadId": null,
+          "userMessageId": "fork-local",
+          "rootNodeId": null,
+          "activeAttemptId": null,
+          "status": "completed",
+          "requestedAt": "2026-01-01T00:00:00.000Z",
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "checkpointId": null,
+          "contextHandoffId": null
+        }
+      ],
+      "attempts": [],
+      "nodes": [],
+      "subagents": [],
+      "providerSessions": [],
+      "providerThreads": [],
+      "providerTurns": [],
+      "runtimeRequests": [],
+      "messages": [
+        {
+          "createdBy": "user",
+          "creationSource": "server",
+          "id": "fork-local",
+          "threadId": "thread:fork",
+          "runId": "run:fork:2",
+          "nodeId": null,
+          "role": "user",
+          "text": "CHILD local",
+          "attachments": [],
+          "streaming": false,
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "plans": [],
+      "turnItems": [
+        {
+          "id": "item:fork-local",
+          "threadId": "thread:fork",
+          "runId": "run:fork:2",
+          "nodeId": null,
+          "providerThreadId": null,
+          "providerTurnId": null,
+          "nativeItemRef": null,
+          "parentItemId": null,
+          "ordinal": 2,
+          "status": "completed",
+          "title": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "createdBy": "user",
+          "creationSource": "server",
+          "type": "user_message",
+          "messageId": "fork-local",
+          "inputIntent": "turn_start",
+          "text": "CHILD local",
+          "attachments": []
+        }
+      ],
+      "checkpointScopes": [],
+      "checkpoints": [],
+      "contextHandoffs": [],
+      "contextTransfers": [],
+      "visibleTurnItems": [
+        {
+          "position": 0,
+          "visibility": "inherited",
+          "sourceThreadId": "thread:parent",
+          "sourceItemId": "item:parent-first",
+          "item": {
+            "id": "item:parent-first",
+            "threadId": "thread:parent",
+            "runId": "run:parent:1",
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 1,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "createdBy": "user",
+            "creationSource": "server",
+            "type": "user_message",
+            "messageId": "parent-first",
+            "inputIntent": "turn_start",
+            "text": "ANCESTOR included",
+            "attachments": []
+          }
+        },
+        {
+          "position": 1,
+          "visibility": "synthetic",
+          "sourceThreadId": "thread:parent",
+          "sourceItemId": "turn-item:fork:thread:fork",
+          "item": {
+            "id": "turn-item:fork:thread:fork",
+            "threadId": "thread:fork",
+            "runId": null,
+            "nodeId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 0,
+            "status": "completed",
+            "title": "Forked from conversation",
+            "startedAt": null,
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "type": "fork",
+            "source": {
+              "type": "run",
+              "threadId": "thread:parent",
+              "runId": "run:parent:1"
+            },
+            "targetThreadId": "thread:fork"
+          }
+        },
+        {
+          "position": 2,
+          "visibility": "local",
+          "sourceThreadId": "thread:fork",
+          "sourceItemId": "item:fork-local",
+          "item": {
+            "id": "item:fork-local",
+            "threadId": "thread:fork",
+            "runId": "run:fork:2",
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 2,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "createdBy": "user",
+            "creationSource": "server",
+            "type": "user_message",
+            "messageId": "fork-local",
+            "inputIntent": "turn_start",
+            "text": "CHILD local",
+            "attachments": []
+          }
+        }
+      ],
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "nextOrdinal": 3
+  },
+  {
+    "id": "thread:parent",
+    "projection": {
+      "thread": {
+        "createdBy": "system",
+        "creationSource": "server",
+        "id": "thread:parent",
+        "projectId": "project:fixture",
+        "title": "thread:parent",
+        "providerInstanceId": "codex",
+        "modelSelection": {
+          "instanceId": "codex",
+          "model": "gpt-5.4"
+        },
+        "runtimeMode": "approval-required",
+        "interactionMode": "default",
+        "branch": null,
+        "worktreePath": null,
+        "activeProviderThreadId": null,
+        "lineage": {
+          "parentThreadId": null,
+          "relationshipToParent": null,
+          "rootThreadId": "thread:parent"
+        },
+        "forkedFrom": null,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z",
+        "archivedAt": null,
+        "settledOverride": null,
+        "settledAt": null,
+        "lastVisitedAt": null,
+        "deletedAt": null
+      },
+      "runs": [
+        {
+          "id": "run:parent:1",
+          "threadId": "thread:parent",
+          "ordinal": 1,
+          "providerInstanceId": "codex",
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "gpt-5.4"
+          },
+          "providerThreadId": null,
+          "userMessageId": "parent-first",
+          "rootNodeId": null,
+          "activeAttemptId": null,
+          "status": "completed",
+          "requestedAt": "2026-01-01T00:00:00.000Z",
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "checkpointId": null,
+          "contextHandoffId": null
+        },
+        {
+          "id": "run:parent:2",
+          "threadId": "thread:parent",
+          "ordinal": 2,
+          "providerInstanceId": "codex",
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "gpt-5.4"
+          },
+          "providerThreadId": null,
+          "userMessageId": "parent-later",
+          "rootNodeId": null,
+          "activeAttemptId": null,
+          "status": "completed",
+          "requestedAt": "2026-01-01T00:00:00.000Z",
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "checkpointId": null,
+          "contextHandoffId": null
+        }
+      ],
+      "attempts": [],
+      "nodes": [],
+      "subagents": [],
+      "providerSessions": [],
+      "providerThreads": [],
+      "providerTurns": [],
+      "runtimeRequests": [],
+      "messages": [
+        {
+          "createdBy": "user",
+          "creationSource": "server",
+          "id": "parent-first",
+          "threadId": "thread:parent",
+          "runId": "run:parent:1",
+          "nodeId": null,
+          "role": "user",
+          "text": "ANCESTOR included",
+          "attachments": [],
+          "streaming": false,
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "createdBy": "agent",
+          "creationSource": "server",
+          "id": "parent-later",
+          "threadId": "thread:parent",
+          "runId": "run:parent:2",
+          "nodeId": null,
+          "role": "assistant",
+          "text": "LATER excluded",
+          "attachments": [],
+          "streaming": false,
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "plans": [],
+      "turnItems": [
+        {
+          "id": "item:parent-first",
+          "threadId": "thread:parent",
+          "runId": "run:parent:1",
+          "nodeId": null,
+          "providerThreadId": null,
+          "providerTurnId": null,
+          "nativeItemRef": null,
+          "parentItemId": null,
+          "ordinal": 1,
+          "status": "completed",
+          "title": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "createdBy": "user",
+          "creationSource": "server",
+          "type": "user_message",
+          "messageId": "parent-first",
+          "inputIntent": "turn_start",
+          "text": "ANCESTOR included",
+          "attachments": []
+        },
+        {
+          "id": "item:parent-later",
+          "threadId": "thread:parent",
+          "runId": "run:parent:2",
+          "nodeId": null,
+          "providerThreadId": null,
+          "providerTurnId": null,
+          "nativeItemRef": null,
+          "parentItemId": null,
+          "ordinal": 2,
+          "status": "completed",
+          "title": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "type": "assistant_message",
+          "messageId": "parent-later",
+          "text": "LATER excluded",
+          "streaming": false
+        }
+      ],
+      "checkpointScopes": [],
+      "checkpoints": [],
+      "contextHandoffs": [],
+      "contextTransfers": [],
+      "visibleTurnItems": [
+        {
+          "position": 0,
+          "visibility": "local",
+          "sourceThreadId": "thread:parent",
+          "sourceItemId": "item:parent-first",
+          "item": {
+            "id": "item:parent-first",
+            "threadId": "thread:parent",
+            "runId": "run:parent:1",
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 1,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "createdBy": "user",
+            "creationSource": "server",
+            "type": "user_message",
+            "messageId": "parent-first",
+            "inputIntent": "turn_start",
+            "text": "ANCESTOR included",
+            "attachments": []
+          }
+        },
+        {
+          "position": 1,
+          "visibility": "local",
+          "sourceThreadId": "thread:parent",
+          "sourceItemId": "item:parent-later",
+          "item": {
+            "id": "item:parent-later",
+            "threadId": "thread:parent",
+            "runId": "run:parent:2",
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 2,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "type": "assistant_message",
+            "messageId": "parent-later",
+            "text": "LATER excluded",
+            "streaming": false
+          }
+        }
+      ],
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "nextOrdinal": 3
+  },
+  {
+    "id": "thread:portable",
+    "projection": {
+      "thread": {
+        "createdBy": "system",
+        "creationSource": "server",
+        "id": "thread:portable",
+        "projectId": "project:fixture",
+        "title": "thread:portable",
+        "providerInstanceId": "codex",
+        "modelSelection": {
+          "instanceId": "codex",
+          "model": "gpt-5.4"
+        },
+        "runtimeMode": "approval-required",
+        "interactionMode": "default",
+        "branch": null,
+        "worktreePath": null,
+        "activeProviderThreadId": null,
+        "historyOrigin": "v1_import",
+        "lineage": {
+          "parentThreadId": null,
+          "relationshipToParent": null,
+          "rootThreadId": "thread:portable"
+        },
+        "forkedFrom": null,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z",
+        "archivedAt": null,
+        "settledOverride": null,
+        "settledAt": null,
+        "lastVisitedAt": null,
+        "deletedAt": null
+      },
+      "runs": [],
+      "attempts": [],
+      "nodes": [],
+      "subagents": [],
+      "providerSessions": [],
+      "providerThreads": [],
+      "providerTurns": [],
+      "runtimeRequests": [],
+      "messages": [
+        {
+          "createdBy": "user",
+          "creationSource": "server",
+          "id": "z-first",
+          "threadId": "thread:portable",
+          "runId": null,
+          "nodeId": null,
+          "role": "user",
+          "text": "FIRST question",
+          "attachments": [
+            {
+              "type": "image",
+              "id": "fixture-image",
+              "name": "fixture.png",
+              "mimeType": "image/png",
+              "sizeBytes": 1
+            }
+          ],
+          "streaming": false,
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "createdBy": "agent",
+          "creationSource": "server",
+          "id": "a-second",
+          "threadId": "thread:portable",
+          "runId": null,
+          "nodeId": null,
+          "role": "assistant",
+          "text": "SECOND answer",
+          "attachments": [],
+          "streaming": false,
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "plans": [
+        {
+          "id": "plan:fixture",
+          "threadId": "thread:portable",
+          "runId": null,
+          "nodeId": "node:historical-plan",
+          "status": "completed",
+          "kind": "proposed_plan",
+          "markdown": "# Historical plan\nPreserve this plan."
+        }
+      ],
+      "turnItems": [
+        {
+          "id": "item:z-first",
+          "threadId": "thread:portable",
+          "runId": null,
+          "nodeId": null,
+          "providerThreadId": null,
+          "providerTurnId": null,
+          "nativeItemRef": null,
+          "parentItemId": null,
+          "ordinal": 1,
+          "status": "completed",
+          "title": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "createdBy": "user",
+          "creationSource": "server",
+          "type": "user_message",
+          "messageId": "z-first",
+          "inputIntent": "turn_start",
+          "text": "FIRST question",
+          "attachments": [
+            {
+              "type": "image",
+              "id": "fixture-image",
+              "name": "fixture.png",
+              "mimeType": "image/png",
+              "sizeBytes": 1
+            }
+          ]
+        },
+        {
+          "id": "item:a-second",
+          "threadId": "thread:portable",
+          "runId": null,
+          "nodeId": null,
+          "providerThreadId": null,
+          "providerTurnId": null,
+          "nativeItemRef": null,
+          "parentItemId": null,
+          "ordinal": 2,
+          "status": "completed",
+          "title": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "completedAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "type": "assistant_message",
+          "messageId": "a-second",
+          "text": "SECOND answer",
+          "streaming": false
+        }
+      ],
+      "checkpointScopes": [],
+      "checkpoints": [],
+      "contextHandoffs": [],
+      "contextTransfers": [],
+      "visibleTurnItems": [
+        {
+          "position": 0,
+          "visibility": "local",
+          "sourceThreadId": "thread:portable",
+          "sourceItemId": "item:z-first",
+          "item": {
+            "id": "item:z-first",
+            "threadId": "thread:portable",
+            "runId": null,
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 1,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "createdBy": "user",
+            "creationSource": "server",
+            "type": "user_message",
+            "messageId": "z-first",
+            "inputIntent": "turn_start",
+            "text": "FIRST question",
+            "attachments": [
+              {
+                "type": "image",
+                "id": "fixture-image",
+                "name": "fixture.png",
+                "mimeType": "image/png",
+                "sizeBytes": 1
+              }
+            ]
+          }
+        },
+        {
+          "position": 1,
+          "visibility": "local",
+          "sourceThreadId": "thread:portable",
+          "sourceItemId": "item:a-second",
+          "item": {
+            "id": "item:a-second",
+            "threadId": "thread:portable",
+            "runId": null,
+            "nodeId": null,
+            "providerThreadId": null,
+            "providerTurnId": null,
+            "nativeItemRef": null,
+            "parentItemId": null,
+            "ordinal": 2,
+            "status": "completed",
+            "title": null,
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "completedAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "type": "assistant_message",
+            "messageId": "a-second",
+            "text": "SECOND answer",
+            "streaming": false
+          }
+        }
+      ],
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "nextOrdinal": 3
+  }
+]

@@ -54,14 +54,17 @@ threadbridge --help
 Prerequisites:
 - Node.js 22+
 - `sqlite3` available on `PATH` for backup-enabled T3 import/copy flows
+- `lsof` on `PATH` for offline T3 v2 writes (macOS/Linux)
 
 ## Usage
 
 ### Agent and script usage
 
-**T3 Code (Alpha):** the CLI defaults to `~/.t3/userdata/statev2.sqlite` when present. Reads prefer orchestration v2; legacy threads and shells awaiting transcript migration use the v1 snapshot path. In T3 Code, prefer MCP `t3_thread_search` / `t3_thread_read` for live inspection.
+**T3 reads:** the CLI defaults to `~/.t3/userdata/statev2.sqlite` when present. Reads use a SQLite snapshot and canonical v2 turn-item order, including inherited fork history and visibility filters. Legacy threads and shells awaiting transcript migration retain the v1 path. In T3 Code, prefer MCP `t3_thread_search` / `t3_thread_read` for live inspection; the CLI supplies portable IR without requiring a running server.
 
-**T3 writes are a legacy compatibility workaround:** `copy` and imports insert v1 `projection_*` rows, not v2 commands or events. T3 must run its legacy importer to make them available in v2; a server restart may be required, and live visibility is not verified by Threadbridge. Receipts warn when writing to a v2 database. Copies from v2 sources currently transfer message text only, excluding attachments, plans, activities, and runtime bindings. Native v2 import through a T3-owned API is not implemented.
+**T3 writes:** stop T3 first. For the supported stock **v0.1.0** storage profile (commit `81493ef`, migration 62), Threadbridge writes native v2 events and their projections in one transaction. No T3 server, fork, plugin, or legacy importer is required. Unknown schemas, stale projections, active runs, pending effects and detectable open database users are rejected. The process check cannot prevent T3 from being started during an import; keep it stopped until the command finishes.
+
+Copies preserve ordered visible messages, available attachment files, and plan text with fresh IDs. Fork history becomes an independent conversation. Tool/activity history becomes labelled historical text; system/developer messages become labelled user history. Runtime bindings, runs, approvals and executable effects are not cloned. V2 `--copy-runtime` is rejected. Receipts report attachment omissions and representation changes. Legacy-only destination databases retain the v1 writer. See [storage compatibility and verification](docs/t3-storage.md).
 
 Every command accepts `--json`. Successful commands write one JSON object to stdout:
 
@@ -84,7 +87,7 @@ Use `show --json` to read a complete thread in the versioned, harness-neutral Th
 ./bin/threadbridge.js antigravity show <conversation-id> --json
 ```
 
-The IR includes `schemaVersion`, source metadata, thread/project metadata, normalized content blocks, messages, turns, activities, plans, runtime capabilities, warnings, and adapter extensions. T3 runtime bindings remain excluded unless `--copy-runtime` is explicitly supplied.
+The IR includes `schemaVersion`, source metadata, thread/project metadata, normalized content blocks, messages, turns, activities, plans, runtime capabilities, warnings, and adapter extensions. T3 runtime bindings are excluded by default; only the legacy v1 writer supports explicitly requested `--copy-runtime`.
 
 Search before choosing a target instead of relying on `last`:
 
@@ -103,8 +106,8 @@ Copy from dev to non-dev:
 
 ```bash
 ./bin/threadbridge.js t3 copy 262fa54b-9c91-4df8-87a8-ed691fde2bb9 \
-  --source-db-path ~/.t3/dev/state.sqlite \
-  --db-path ~/.t3/userdata/state.sqlite \
+  --source-db-path ~/.t3/dev/statev2.sqlite \
+  --db-path ~/.t3/userdata/statev2.sqlite \
   --busy-timeout-ms 5000 \
   --lock-retries 20 \
   --retry-delay-ms 500
@@ -114,7 +117,7 @@ Copy thread to a new workspace/project within the same DB (useful for changing p
 
 ```bash
 ./bin/threadbridge.js t3 copy-to-workspace 09ae8d8f-d340-4f2f-b14b-e152daf4e3a7 \
-  --db-path ~/.t3/userdata/state.sqlite \
+  --db-path ~/.t3/userdata/statev2.sqlite \
   --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
   --new-provider opencode \
   --new-model "opencode/big-pickle" \
@@ -125,7 +128,7 @@ Convert from Claude to OpenCode with zen big-pickle model:
 
 ```bash
 ./bin/threadbridge.js t3 copy-to-workspace last \
-  --db-path ~/.t3/userdata/state.sqlite \
+  --db-path ~/.t3/userdata/statev2.sqlite \
   --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
   --new-provider opencode \
   --new-model "opencode/big-pickle"
@@ -135,9 +138,9 @@ Use custom model selection JSON for advanced configuration:
 
 ```bash
 ./bin/threadbridge.js t3 copy-to-workspace last \
-  --db-path ~/.t3/userdata/state.sqlite \
+  --db-path ~/.t3/userdata/statev2.sqlite \
   --new-project-id 872e5864-f911-47e2-8958-1b4d9acadcc9 \
-  --new-model-selection '{"provider":"opencode","model":"opencode/big-pickle","options":[{"id":"agent","value":"build"}]}' \
+  --new-model-selection '{"instanceId":"opencode","model":"opencode/big-pickle","options":{"agent":"build"}}' \
   --title "Custom OpenCode config"
 ```
 
@@ -152,14 +155,14 @@ Import Codex to T3:
 ```bash
 ./bin/threadbridge.js codex to-t3 last \
   --root ~/.codex/sessions \
-  --db-path ~/.t3/userdata/state.sqlite
+  --db-path ~/.t3/userdata/statev2.sqlite
 ```
 
 Export T3 to Codex:
 
 ```bash
 ./bin/threadbridge.js t3 to-codex last \
-  --db-path ~/.t3/userdata/state.sqlite \
+  --db-path ~/.t3/userdata/statev2.sqlite \
   --root ~/.codex/sessions
 ```
 
@@ -189,7 +192,7 @@ Import a Cursor chat into T3:
 
 ```bash
 ./bin/threadbridge.js cursor to-t3 last \
-  --db-path ~/.t3/userdata/state.sqlite
+  --db-path ~/.t3/userdata/statev2.sqlite
 ```
 
 List and import Antigravity conversations:
@@ -199,7 +202,7 @@ List and import Antigravity conversations:
 ./bin/threadbridge.js antigravity search "Moxi" --root ~/.gemini/antigravity --json
 ./bin/threadbridge.js antigravity to-t3 <conversation-id> \
   --root ~/.gemini/antigravity \
-  --db-path ~/.t3/userdata/state.sqlite
+  --db-path ~/.t3/userdata/statev2.sqlite
 ```
 
 Antigravity conversations are read from the documented `brain/<conversationId>/.system_generated/logs/transcript.jsonl` transcript. The opaque conversation database, private model reasoning, system events, and runtime bindings are not copied; completed tool results are retained as assistant text in the T3 transcript.
@@ -221,7 +224,7 @@ Copy an OpenCode session between roots:
 Optional flags:
 - `--title "New thread title"`: override copied title
 - `--new-thread-id <uuid>`: set target thread ID manually
-- `--copy-runtime`: also copy session/runtime rows
+- `--copy-runtime`: also copy session/runtime rows for legacy v1 targets; rejected for native v2 targets
 - `--no-backup`: skip automatic backup
 - `--no-tool-calls`: omit tool calls from a Codex read (Codex `show`/conversions)
 - `--include-boilerplate`: keep harness-injected context blocks
@@ -258,7 +261,7 @@ Every harness that records tool calls now carries them:
 ## Notes
 
 - Default behavior does **not** copy runtime/session bindings.
-- That keeps copied threads as safe historical snapshots unless you explicitly opt in with `--copy-runtime`.
+- Native v2 imports always create independent historical snapshots with fresh provider sessions.
 - `copy` and `to-t3` commands require the source database or session root to exist.
 - Ambiguous targets fail fast instead of guessing.
-- Live T3 copy/import flows use a lock retry/backoff loop and a pre-write SQLite backup unless `--no-backup` is set.
+- Offline T3 copy/import flows use a lock retry/backoff loop and a pre-write SQLite backup unless `--no-backup` is set.

@@ -11,21 +11,34 @@ function parseMaybeJson(text) {
   }
 }
 
-function hasOrchestrationV2Projection(dbPath) {
-  const db = new DatabaseSync(dbPath, { readonly: true });
-  try {
-    const row = db
-      .prepare(`
-        SELECT 1 AS ok
-        FROM sqlite_master
-        WHERE type = 'table' AND name = 'orchestration_v2_projection_threads'
-        LIMIT 1
-      `)
-      .get();
-    return Boolean(row);
-  } finally {
-    db.close();
+function tableExists(db, name) {
+  return Boolean(
+    db
+      .prepare(
+        `
+          SELECT 1 AS ok
+          FROM sqlite_master
+          WHERE type = 'table' AND name = ?
+          LIMIT 1
+        `,
+      )
+      .get(name),
+  );
+}
+
+function columnExists(db, table, name) {
+  return db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .some((column) => column.name === name);
+}
+
+function hasOrchestrationV2Projection(dbOrPath) {
+  if (typeof dbOrPath !== "string") {
+    return tableExists(dbOrPath, "orchestration_v2_projection_threads");
   }
+
+  return withReadTransaction(dbOrPath, (db) => hasOrchestrationV2Projection(db));
 }
 
 function resolveDefaultT3DbPath({ env = "userdata" } = {}) {
@@ -85,30 +98,36 @@ function planMarkdownFromV2Payload(payloadJson) {
 }
 
 function listV2ThreadIndex(db) {
+  const deletedAt = columnExists(db, "orchestration_v2_projection_threads", "deleted_at")
+    ? "threads.deleted_at"
+    : "NULL";
   return db
     .prepare(`
       SELECT
         threads.thread_id AS threadId,
         threads.title AS title,
         threads.created_at AS createdAt,
-        threads.updated_at AS updatedAt
+        threads.updated_at AS updatedAt,
+        ${deletedAt} AS deletedAt
       FROM orchestration_v2_projection_threads AS threads
-      WHERE threads.deleted_at IS NULL
       ORDER BY threads.updated_at DESC, threads.thread_id DESC
     `)
     .all();
 }
 
 function listV1ThreadIndex(db) {
+  const deletedAt = columnExists(db, "projection_threads", "deleted_at")
+    ? "threads.deleted_at"
+    : "NULL";
   return db
     .prepare(`
       SELECT
         threads.thread_id AS threadId,
         threads.title AS title,
         threads.created_at AS createdAt,
-        threads.created_at AS updatedAt
+        threads.created_at AS updatedAt,
+        ${deletedAt} AS deletedAt
       FROM projection_threads AS threads
-      WHERE threads.deleted_at IS NULL
       ORDER BY threads.created_at DESC, threads.thread_id DESC
     `)
     .all();
@@ -116,10 +135,16 @@ function listV1ThreadIndex(db) {
 
 function mergeThreadIndexRows(v2Rows, v1Rows) {
   const byId = new Map();
+  const v2Ids = new Set(v2Rows.map((row) => row.threadId));
   for (const row of v1Rows) {
+    if (row.deletedAt !== null && row.deletedAt !== undefined) continue;
+    // A v2 shell, including a tombstone, owns the id. Do not let an old
+    // projection row resurrect after the v2 thread has been deleted.
+    if (v2Ids.has(row.threadId)) continue;
     byId.set(row.threadId, { ...row, source: "v1" });
   }
   for (const row of v2Rows) {
+    if (row.deletedAt !== null && row.deletedAt !== undefined) continue;
     byId.set(row.threadId, { ...row, source: "v2" });
   }
   return [...byId.values()].sort((left, right) => {
@@ -132,49 +157,56 @@ function mergeThreadIndexRows(v2Rows, v1Rows) {
   });
 }
 
-function listThreadIndexRows(dbPath) {
-  const db = new DatabaseSync(dbPath, { readonly: true });
-  try {
-    const v2 = hasOrchestrationV2Projection(dbPath) ? listV2ThreadIndex(db) : [];
-    const v1 = db
-      .prepare(`
-        SELECT 1 AS ok FROM sqlite_master
-        WHERE type = 'table' AND name = 'projection_threads'
-        LIMIT 1
-      `)
-      .get()
-      ? listV1ThreadIndex(db)
-      : [];
-    return mergeThreadIndexRows(v2, v1);
-  } finally {
-    db.close();
-  }
+function listThreadIndexRowsFromDb(db) {
+  const v2 = hasOrchestrationV2Projection(db) ? listV2ThreadIndex(db) : [];
+  const v1 = tableExists(db, "projection_threads") ? listV1ThreadIndex(db) : [];
+  return mergeThreadIndexRows(v2, v1);
 }
 
-function hasPendingV1Transcript(dbPath, threadId) {
+function listV2ThreadIndexRowsFromDb(db) {
+  return hasOrchestrationV2Projection(db) ? listV2ThreadIndex(db) : [];
+}
+
+function listThreadIndexRows(dbPath) {
+  return withReadTransaction(dbPath, (db) => listThreadIndexRowsFromDb(db));
+}
+
+function hasPendingV1TranscriptFromDb(db, threadId) {
+  if (!tableExists(db, "orchestration_v2_legacy_imports")) return false;
+  return Boolean(
+    db
+      .prepare(
+        `
+          SELECT 1 AS ok
+          FROM orchestration_v2_legacy_imports
+          WHERE thread_id = ? AND transcript_imported_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(threadId),
+  );
+}
+
+function hasPendingV1Transcript(dbOrPath, threadId) {
+  if (typeof dbOrPath !== "string") {
+    return hasPendingV1TranscriptFromDb(dbOrPath, threadId);
+  }
+  return withReadTransaction(dbOrPath, (db) => hasPendingV1TranscriptFromDb(db, threadId));
+}
+
+function withReadTransaction(dbPath, callback) {
   const db = new DatabaseSync(dbPath, { readonly: true });
   try {
-    const table = db
-      .prepare(`
-        SELECT 1 AS ok
-        FROM sqlite_master
-        WHERE type = 'table' AND name = 'orchestration_v2_legacy_imports'
-        LIMIT 1
-      `)
-      .get();
-    if (!table) {
-      return false;
-    }
-    const row = db
-      .prepare(`
-        SELECT 1 AS ok
-        FROM orchestration_v2_legacy_imports
-        WHERE thread_id = ? AND transcript_imported_at IS NULL
-        LIMIT 1
-      `)
-      .get(threadId);
-    return Boolean(row);
+    db.exec("BEGIN");
+    const result = callback(db);
+    db.exec("COMMIT");
+    return result;
   } finally {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // The transaction was committed or the callback failed before BEGIN.
+    }
     db.close();
   }
 }
@@ -204,11 +236,12 @@ function resolveThreadTargetFromIndex({ rows, target, sourceDbPath }) {
     throw new Error(`Thread target is ambiguous: ${target}`);
   }
   throw new Error(
-    `Thread not found: ${target}. Use --db-path ~/.t3/userdata/statev2.sqlite for T3 Code Alpha; t3 copy still requires v1 projection_threads rows for the source thread.`,
+    `Thread not found: ${target}. Use --db-path ~/.t3/userdata/statev2.sqlite for T3 Code Alpha.`,
   );
 }
 
 module.exports = {
+  tableExists,
   hasOrchestrationV2Projection,
   resolveDefaultT3DbPath,
   parseMaybeJson,
@@ -216,7 +249,11 @@ module.exports = {
   attachmentsFromPayloadJson,
   planMarkdownFromV2Payload,
   listThreadIndexRows,
+  listThreadIndexRowsFromDb,
+  listV2ThreadIndexRowsFromDb,
   mergeThreadIndexRows,
   resolveThreadTargetFromIndex,
   hasPendingV1Transcript,
+  hasPendingV1TranscriptFromDb,
+  withReadTransaction,
 };

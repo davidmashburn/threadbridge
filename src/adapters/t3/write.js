@@ -16,17 +16,8 @@ const {
   remapSnapshotIds,
   withLockRetries,
 } = require("../../t3-copy");
-const { hasOrchestrationV2Projection } = require("./storage");
-
-function t3WriteWarnings(ir, dbPath) {
-  return [
-    ...ir.warnings,
-    ...(hasOrchestrationV2Projection(dbPath) ? [{
-      code: "t3_legacy_import_required",
-      message: "Wrote legacy projection rows. T3 must run its legacy importer before these appear in v2; live visibility is not verified and a server restart may be required.",
-    }] : []),
-  ];
-}
+const { inspectT3Storage } = require("./profile");
+const { writeIrToT3V2 } = require("./write-v2");
 
 function createModelSelectionFromIr(ir, intent) {
   if (intent.modelSelection) {
@@ -55,7 +46,7 @@ function importIrTranscriptIntoT3({
   if (!fs.existsSync(dbPath)) {
     throw new Error(`T3 database not found: ${dbPath}`);
   }
-  const warnings = t3WriteWarnings(ir, dbPath);
+  const warnings = [...ir.warnings];
   if (ir.source.harness === "t3" && !ir.extensions?.t3Snapshot) {
     warnings.push({
       code: "t3_transcript_only_copy",
@@ -341,7 +332,7 @@ function cloneIrThreadIntoT3({
   }
 
   const resolvedDbPath = ensureDbExists(dbPath);
-  const warnings = t3WriteWarnings(ir, resolvedDbPath);
+  const warnings = [...ir.warnings];
   const actualNewThreadId = newThreadId || crypto.randomUUID();
   const snapshot = ir.extensions.t3Snapshot;
   const remapped = remapSnapshotIds(snapshot, actualNewThreadId);
@@ -404,6 +395,12 @@ function cloneIrThreadIntoT3({
 
 function writeIrToT3(args) {
   const intent = normalizeWriteIntent(args.intent, args.options);
+  if (!fs.existsSync(args.dbPath)) throw new Error(`T3 database not found: ${args.dbPath}`);
+  const resolvedDbPath = ensureDbExists(args.dbPath);
+  const db = new DatabaseSync(resolvedDbPath, { readonly: true });
+  let storage;
+  try { storage = inspectT3Storage(db, { write: true }); } finally { db.close(); }
+  if (storage.kind === "v2") return writeIrToT3V2({ ...args, dbPath: resolvedDbPath, intent });
   if (intent.type === "clone-thread" || intent.type === "copy-to-workspace") {
     return cloneIrThreadIntoT3({
       ir: args.ir,

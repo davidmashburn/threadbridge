@@ -169,6 +169,7 @@ function normalizePlan(plan) {
     updatedAt: plan.updatedAt || plan.createdAt || new Date().toISOString(),
     implementedAt: plan.implementedAt || null,
     implementationThreadId: plan.implementationThreadId || null,
+    metadata: plan.metadata && typeof plan.metadata === "object" ? plan.metadata : {},
   };
 }
 
@@ -238,6 +239,7 @@ function createThreadbridgeIr(input) {
     source: {
       harness: input.source?.harness || "unknown",
       version: input.source?.version || null,
+      storage: input.source?.storage || null,
       sourceId: input.source?.sourceId || null,
       sourcePath: input.source?.sourcePath || null,
       extractedAt: input.source?.extractedAt || new Date().toISOString(),

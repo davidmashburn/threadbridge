@@ -1,0 +1,10 @@
+{
+  "apps/server/src/orchestration-v2/ProjectionStore.ts": "7f4826ec7dca125b1e5d4b87463667defdf18266f5e019fb8c18fc3c3f818b6b",
+  "apps/server/src/orchestration-v2/ProjectionMaintenance.ts": "6bca222caafc6faf94e68b5459ac95017f0857e0a7852ed052b48ecce70aed23",
+  "apps/server/src/orchestration-v2/EventStore.ts": "3bf16b0ec42964601ae2392f8fb1a6d22bdead5f0f0207575215fae4ac3e8a1d",
+  "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts": "73ff081da513b1c3608b5d8f042add1b2e3797224c99b019f7f5a8195664f3fa",
+  "packages/contracts/src/orchestrationV2.ts": "437e9feb318a15bbf61a48aef804e36128d30fd0f1bf8f4da4cde5b1ae280fa8",
+  "packages/contracts/src/applicationEvent.ts": "d3c95e184e083f89a989058a826c938cee8127ffc4c12db07d00968847f03db9",
+  "apps/server/src/attachmentStore.ts": "c1059082d260a15f41f5dc18f952321dd0f9e8fc340fe9e4480ee7b87636e3aa",
+  "packages/contracts/src/chatAttachment.ts": "8737139fa34ed60cac8b12de599c79b1824d175d942d12b3413e9f38b3573fec"
+}

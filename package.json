@@ -1,6 +1,6 @@
 {
   "name": "@davmash/threadbridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Thread interconversion toolkit for AI harnesses",
   "license": "MIT",
   "repository": {
@@ -20,12 +20,14 @@
     "src/",
     "skills/",
     "docs/skills-integration-plan.md",
-    "README.md"
+    "README.md",
+    "docs/t3-storage.md"
   ],
   "scripts": {
     "syntax": "find bin src test -name '*.js' -print0 | xargs -0 -n1 node --check",
-    "test": "node --test ./test/cli.test.js",
-    "check": "npm run syntax && npm test"
+    "test": "node --test ./test/*.test.js",
+    "check": "npm run syntax && npm test",
+    "test:stock-t3": "node test/stock-t3/run.cjs"
   },
   "engines": {
     "node": ">=22"

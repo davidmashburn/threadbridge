@@ -1,0 +1,53 @@
+describe("Threadbridge independent offline import", () => {
+  it.live.each(["marked", "unmarked"])("continues imported text: %s", (variant) =>
+    Effect.scoped(Effect.gen(function* () {
+      const marked = variant !== "unmarked";
+      const completed = false;
+      const dbPath = `${process.env.TB_STOCK_TEST_DIR}/check-${variant}.sqlite`;
+      copyFileSync(`${process.env.TB_STOCK_TEST_DIR}/base.sqlite`, dbPath);
+      if (!marked) {
+        const db = new DatabaseSync(dbPath);
+        db.exec(`UPDATE orchestration_events SET payload_json=json_remove(payload_json,'$.historyOrigin') WHERE event_type='thread.created';
+          UPDATE orchestration_v2_projection_threads SET payload_json=json_remove(payload_json,'$.historyOrigin')`);
+        db.close();
+      }
+      const cwd = yield* checkpointWorkspace(`tb-offline-${marked}`);
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const injectedHistory = yield* Ref.make<ReadonlyArray<unknown>>([]);
+      const registry = ProviderAdapterRegistry.layerFromAdapters([
+        makeTestAdapter({instanceId:ProviderInstanceId.make('codex'),driver:CODEX_DRIVER,
+          capabilities:CodexProviderCapabilitiesV2,modelSelection:CODEX_MODEL_SELECTION,
+          responseByRunOrdinal:{1:'Continued successfully',2:'Continued successfully'},capturedTurns,injectedHistory})
+      ]);
+      const database = SqlitePersistence.layerFromPath(dbPath).pipe(Layer.provide(NodeServices.layer));
+      const stores = Layer.mergeAll(EventStore.layer,ProjectionStore.layer).pipe(Layer.provideMerge(database));
+      const maintenance = ProjectionMaintenance.layer.pipe(Layer.provide(stores));
+      const harness = ProviderReplayHarness.layerWithRegistry({name:`tb-offline-${marked}`,
+        runtimePolicyOverride:{cwd,approvalPolicy:'never',sandboxPolicy:{type:'readOnly',access:{type:'fullAccess'},networkAccess:false}}},registry,{databaseLayer:database});
+      const layer = Layer.mergeAll(stores,maintenance,harness);
+      const result = yield* Effect.gen(function* () {
+        const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+        yield* maintenance.rebuild;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const id = ThreadId.make('thread:portable');
+        yield* orchestrator.dispatch({type:'message.dispatch',createdBy:'user',creationSource:'web',
+          commandId:CommandId.make('command:tb:continue'),threadId:id,messageId:MessageId.make('message:tb:continue'),
+          text:'Continue from the imported conversation.',attachments:[],modelSelection:CODEX_MODEL_SELECTION,dispatchMode:{type:'start_immediately'}});
+        const projection = yield* waitForIdle(id);
+        assert.equal(projection.runs.at(-1)?.status,'completed');
+        const turns = yield* Ref.get(capturedTurns);
+        const history = yield* Ref.get(injectedHistory);
+        const delivered = JSON.stringify({turns,history});
+        assert.equal(delivered.includes('FIRST question'), marked && !completed);
+        assert.equal(delivered.includes('SECOND answer'), marked && !completed);
+        assert.equal(delivered.includes('Historical plan'), marked);
+        assert.equal(delivered.includes('portable attachment'), false);
+        yield* maintenance.rebuild;
+        const rebuilt = yield* orchestrator.getThreadProjection(id);
+        assert.deepEqual(rebuilt.messages,projection.messages);
+        return {variant,marked,completed,turns,history,runStatus:projection.runs.at(-1)?.status,handoffs:projection.contextHandoffs};
+      }).pipe(Effect.provide(layer));
+      writeFileSync(`${process.env.TB_STOCK_TEST_DIR}/check-${variant}.json`,JSON.stringify(result,null,2));
+    }))
+  );
+});

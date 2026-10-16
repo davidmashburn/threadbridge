@@ -493,7 +493,7 @@ test("t3 show reads orchestration v2 projection threads", () => {
   });
 });
 
-test("copyThreadToNewWorkspace works for orchestration v2-only source threads", () => {
+test("copyThreadToNewWorkspace rejects unverified orchestration v2 target schemas", () => {
   withTempDir("threadbridge-t3-v2-copyws-", (root) => {
     const dbPath = path.join(root, "statev2.sqlite");
     const db = new DatabaseSync(dbPath);
@@ -577,38 +577,13 @@ test("copyThreadToNewWorkspace works for orchestration v2-only source threads", 
       db.close();
     }
 
-    const result = copyThreadToNewWorkspace({
-      dbPath,
-      target: "thread-v2-only",
-      newThreadId: "explicit-copy-id",
-      newProjectId: "project-target",
-      newProvider: "opencode",
-      newModel: "opencode/big-pickle",
-      backup: false,
-    });
-    assert.equal(result.newThreadId, "explicit-copy-id");
-    assert.ok(result.warnings.some((warning) => warning.code === "t3_legacy_import_required"));
-    assert.ok(result.warnings.some((warning) => warning.code === "t3_transcript_only_copy"));
-
+    assert.throws(() => copyThreadToNewWorkspace({
+      dbPath, target: "thread-v2-only", newThreadId: "explicit-copy-id", backup: false,
+    }), /Unsupported T3 v2 storage/);
     const targetDb = new DatabaseSync(dbPath, { readonly: true });
     try {
-      const row = targetDb
-        .prepare("SELECT model_selection_json, title FROM projection_threads WHERE thread_id = ?")
-        .get(result.newThreadId);
-      assert.ok(row);
-      assert.match(row.model_selection_json, /opencode\/big-pickle/);
-      assert.match(row.title, /new workspace/);
-      const message = targetDb
-        .prepare("SELECT text FROM projection_thread_messages WHERE thread_id = ?")
-        .get(result.newThreadId);
-      assert.equal(message.text, "copy me");
-      const project = targetDb.prepare("SELECT title, workspace_root FROM projection_projects WHERE project_id = ?").get("project-target");
-      assert.equal(project.title, "Target");
-      assert.equal(project.workspace_root, "/tmp/target");
-      assert.equal(targetDb.prepare("SELECT COUNT(*) AS n FROM orchestration_v2_legacy_imports").get().n, 0);
-    } finally {
-      targetDb.close();
-    }
+      assert.equal(targetDb.prepare("SELECT COUNT(*) AS n FROM projection_threads").get().n, 0);
+    } finally { targetDb.close(); }
   });
 });
 

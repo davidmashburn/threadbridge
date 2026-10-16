@@ -104,12 +104,18 @@ function fail(message) {
   throw new CliError(message);
 }
 
-function emitJson(args, data) {
-  if (!args.json) return false;
+function emitJson(args, data, warnings = []) {
+  if (!args.json) {
+    const visibleWarnings = warnings.length ? warnings
+      : args.adapter === "t3" || args.command === "to-t3" ? data?.warnings || [] : [];
+    for (const warning of visibleWarnings) process.stderr.write(`Warning: ${warning.message || warning}\n`);
+    return false;
+  }
   process.stdout.write(`${JSON.stringify({
     ok: true,
     command: `${args.adapter} ${args.command}`,
     data,
+    ...(warnings.length ? { warnings } : {}),
   }, null, 2)}\n`);
   return true;
 }
@@ -313,8 +319,9 @@ function parseArgs(argv) {
 }
 
 function runT3List(args) {
-  const rows = listT3Threads(args);
-  if (emitJson(args, rows)) return;
+  const warnings = [];
+  const rows = listT3Threads({ ...args, warnings });
+  if (emitJson(args, rows, warnings)) return;
   for (const row of rows) {
       process.stdout.write(`${row.createdAt}  ${row.threadId}\n`);
       process.stdout.write(`  title: ${row.title}\n`);
@@ -417,11 +424,12 @@ function formatMatchExcerpt(text, query, maxLength = 180) {
 
 function runT3Search(args) {
   const { dbPath, limit, query } = args;
-  const rows = searchT3Threads({ dbPath, limit, query });
+  const warnings = [];
+  const rows = searchT3Threads({ dbPath, limit, query, warnings });
   if (emitJson(args, rows.map((row) => ({
     ...row,
     matchedExcerpt: row.matchedText ? formatMatchExcerpt(row.matchedText, query) : null,
-  })))) return;
+  })), warnings)) return;
 
   for (const row of rows) {
     process.stdout.write(`${row.updatedAt || row.createdAt}  ${row.threadId}\n`);
@@ -651,7 +659,7 @@ function runCli(argv) {
       process.stdout.write(`Target DB: ${receipt.target.path}\n`);
       if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
       process.stdout.write(
-        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans || 0}\n`,
+        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans ?? receipt.counts.plans ?? 0}\n`,
       );
       return;
     }
@@ -685,7 +693,7 @@ function runCli(argv) {
       process.stdout.write(`DB: ${receipt.target.path}\n`);
       if (receipt.backupPath) process.stdout.write(`Backup: ${receipt.backupPath}\n`);
       process.stdout.write(
-        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans || 0}\n`,
+        `Copied rows: messages=${receipt.counts.messages || 0}, turns=${receipt.counts.turns || 0}, activities=${receipt.counts.activities || 0}, proposedPlans=${receipt.counts.proposedPlans ?? receipt.counts.plans ?? 0}\n`,
       );
       return;
     }
