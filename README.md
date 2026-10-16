@@ -59,6 +59,8 @@ Prerequisites:
 
 ### Agent and script usage
 
+**T3 Code (Alpha):** the CLI defaults to `~/.t3/userdata/statev2.sqlite` when present (`orchestration_v2_projection_*` tables). Legacy installs may still use `state.sqlite` (v1 `projection_*`). In T3 Code you can also use `t3_thread_search` / `t3_thread_read` (MCP). `t3 copy` still writes v1 projection rows and may not work for v2-only threads.
+
 Every command accepts `--json`. Successful commands write one JSON object to stdout:
 
 ```json
@@ -75,7 +77,7 @@ Use `show --json` to read a complete thread in the versioned, harness-neutral Th
 
 ```bash
 ./bin/threadbridge.js codex show last --root ~/.codex/sessions --json
-./bin/threadbridge.js t3 show <thread-id> --db-path ~/.t3/userdata/state.sqlite --json
+./bin/threadbridge.js t3 show <thread-id> --db-path ~/.t3/userdata/statev2.sqlite --json
 ./bin/threadbridge.js claude show last --project-path ~/src/my-project --json
 ./bin/threadbridge.js antigravity show <conversation-id> --json
 ```
@@ -85,14 +87,14 @@ The IR includes `schemaVersion`, source metadata, thread/project metadata, norma
 Search before choosing a target instead of relying on `last`:
 
 ```bash
-./bin/threadbridge.js t3 search "PLAT-403" --db-path ~/.t3/userdata/state.sqlite --json
+./bin/threadbridge.js t3 search "PLAT-403" --db-path ~/.t3/userdata/statev2.sqlite --json
 ./bin/threadbridge.js codex search "persistence" --root ~/.codex/sessions --json
 ```
 
 List T3 threads:
 
 ```bash
-./bin/threadbridge.js t3 list --db-path ~/.t3/userdata/state.sqlite --limit 5
+./bin/threadbridge.js t3 list --db-path ~/.t3/userdata/statev2.sqlite --limit 5
 ```
 
 Copy from dev to non-dev:

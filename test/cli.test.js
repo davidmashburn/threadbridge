@@ -389,6 +389,110 @@ test("Antigravity to-t3 inherits the target project's model selection", () => {
   });
 });
 
+test("t3 show reads orchestration v2 projection threads", () => {
+  withTempDir("threadbridge-t3-v2-show-", (root) => {
+    const dbPath = path.join(root, "statev2.sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`
+        CREATE TABLE projection_projects (
+          project_id TEXT PRIMARY KEY,
+          title TEXT,
+          workspace_root TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_threads (
+          thread_id TEXT PRIMARY KEY,
+          project_id TEXT,
+          title TEXT,
+          runtime_mode TEXT,
+          interaction_mode TEXT,
+          provider_instance_id TEXT,
+          payload_json TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          deleted_at TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_messages (
+          message_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          role TEXT,
+          payload_json TEXT,
+          streaming INTEGER,
+          created_at TEXT,
+          updated_at TEXT,
+          run_id TEXT
+        );
+        CREATE TABLE orchestration_v2_projection_runs (
+          run_id TEXT PRIMARY KEY,
+          thread_id TEXT,
+          ordinal INTEGER,
+          status TEXT,
+          requested_at TEXT,
+          started_at TEXT,
+          completed_at TEXT
+        );
+      `);
+      db.prepare(
+        "INSERT INTO projection_projects (project_id, title, workspace_root, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run("project-v2", "V2 Project", "/tmp/v2", "2026-07-01T00:00:00.000Z", "2026-07-01T00:00:00.000Z");
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, runtime_mode, interaction_mode, provider_instance_id,
+          payload_json, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        "thread-v2",
+        "project-v2",
+        "V2 thread",
+        "approval-required",
+        "default",
+        "claudeAgent",
+        JSON.stringify({ branch: "main", modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-7" } }),
+        "2026-07-01T00:00:00.000Z",
+        "2026-07-02T00:00:00.000Z",
+      );
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, role, payload_json, streaming, created_at, updated_at, run_id
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+      `).run(
+        "msg-1",
+        "thread-v2",
+        "user",
+        JSON.stringify({ text: "hello v2" }),
+        "2026-07-01T00:00:01.000Z",
+        "2026-07-01T00:00:01.000Z",
+        "run-1",
+      );
+      db.prepare(`
+        INSERT INTO orchestration_v2_projection_runs (
+          run_id, thread_id, ordinal, status, requested_at, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        "run-1",
+        "thread-v2",
+        1,
+        "completed",
+        "2026-07-01T00:00:01.000Z",
+        "2026-07-01T00:00:01.000Z",
+        "2026-07-01T00:00:02.000Z",
+      );
+    } finally {
+      db.close();
+    }
+
+    const { readT3ThreadAsIr } = require("../src/adapters/t3/read");
+    const ir = readT3ThreadAsIr({ dbPath, target: "thread-v2" });
+    assert.equal(ir.thread.threadId, "thread-v2");
+    assert.ok(ir.extensions.t3OrchestrationV2);
+    assert.equal(ir.messages.length, 1);
+    assert.equal(ir.messages[0].text, "hello v2");
+    assert.equal(ir.turns.length, 1);
+  });
+});
+
 test("t3 search finds message-body matches and ranks title matches first", () => {
   withTempDir("threadbridge-t3-search-", (root) => {
     const dbPath = path.join(root, "state.sqlite");

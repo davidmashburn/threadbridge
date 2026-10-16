@@ -38,7 +38,9 @@ All skills now support **provider conversion** using the new `t3 copy-to-workspa
 
 ### Agent-readable discovery
 
-Prefer `--json` for all agent-driven commands. Use `search` to resolve a specific source and `show --json` to inspect its canonical IR before proposing a write:
+**In T3 Code**, use `t3_thread_search` and `t3_thread_read` for live T3 thread discovery and inspection; see `skills/t3/SKILL.md`. Reserve `threadbridge t3 search|show` for SQLite-backed IR export, copy, and cross-harness conversion.
+
+For other harnesses and offline scripts, prefer `--json`. Use `search` to resolve a specific source and `show --json` to inspect canonical IR before proposing a write:
 
 ```bash
 threadbridge t3 search "<query>" --db-path ~/.t3/userdata/state.sqlite --json

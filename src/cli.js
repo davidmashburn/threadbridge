@@ -29,14 +29,16 @@ const {
 const { copyThread } = require("./operations/copy-thread");
 const { convertThread } = require("./operations/convert-thread");
 const { readT3ThreadAsIr } = require("./adapters/t3/read");
+const { listT3Threads, searchT3Threads } = require("./adapters/t3/query");
+const { resolveDefaultT3DbPath } = require("./adapters/t3/storage");
 const { readCodexSessionAsIr } = require("./adapters/codex/read");
 const { readClaudeSessionAsIr } = require("./adapters/claude/read");
 const { readCursorChatAsIr } = require("./adapters/cursor/read");
 const { readOpenCodeSessionAsIr } = require("./adapters/opencode/read");
 const { readAntigravityConversationAsIr } = require("./adapters/antigravity/read");
 
-const DEFAULT_T3_DB_PATH = path.join(os.homedir(), ".t3", "userdata", "state.sqlite");
-const DEFAULT_T3_SOURCE_DB_PATH = path.join(os.homedir(), ".t3", "dev", "state.sqlite");
+const DEFAULT_T3_DB_PATH = resolveDefaultT3DbPath({ env: "userdata" });
+const DEFAULT_T3_SOURCE_DB_PATH = resolveDefaultT3DbPath({ env: "dev" });
 const DEFAULT_LIST_LIMIT = 10;
 
 function usage() {
@@ -310,30 +312,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function listT3Threads({ dbPath, limit }) {
-  const db = new DatabaseSync(dbPath);
-  try {
-    return db
-      .prepare(`
-        SELECT
-          threads.thread_id AS threadId,
-          threads.title AS title,
-          threads.created_at AS createdAt,
-          projects.title AS projectTitle,
-          projects.workspace_root AS workspaceRoot
-        FROM projection_threads AS threads
-        LEFT JOIN projection_projects AS projects
-          ON projects.project_id = threads.project_id
-        WHERE threads.deleted_at IS NULL
-        ORDER BY threads.created_at DESC, threads.thread_id DESC
-        LIMIT ?
-      `)
-      .all(limit);
-  } finally {
-    db.close();
-  }
-}
-
 function runT3List(args) {
   const rows = listT3Threads(args);
   if (emitJson(args, rows)) return;
@@ -425,65 +403,6 @@ function runAntigravityList(args) {
 
 function matchesQuery(text, query) {
   return String(text || "").toLowerCase().includes(query.toLowerCase());
-}
-
-function searchT3Threads({ dbPath, limit, query }) {
-  const db = new DatabaseSync(dbPath);
-  try {
-    return db
-      .prepare(`
-        SELECT
-          threads.thread_id AS threadId,
-          threads.title AS title,
-          threads.created_at AS createdAt,
-          threads.updated_at AS updatedAt,
-          projects.title AS projectTitle,
-          projects.workspace_root AS workspaceRoot,
-          CASE
-            WHEN INSTR(LOWER(threads.title), LOWER(?)) > 0 THEN NULL
-            ELSE (
-              SELECT messages.role
-              FROM projection_thread_messages AS messages
-              WHERE messages.thread_id = threads.thread_id
-                AND INSTR(LOWER(messages.text), LOWER(?)) > 0
-              ORDER BY messages.created_at DESC, messages.message_id DESC
-              LIMIT 1
-            )
-          END AS matchedRole,
-          CASE
-            WHEN INSTR(LOWER(threads.title), LOWER(?)) > 0 THEN NULL
-            ELSE (
-              SELECT messages.text
-              FROM projection_thread_messages AS messages
-              WHERE messages.thread_id = threads.thread_id
-                AND INSTR(LOWER(messages.text), LOWER(?)) > 0
-              ORDER BY messages.created_at DESC, messages.message_id DESC
-              LIMIT 1
-            )
-          END AS matchedText
-        FROM projection_threads AS threads
-        LEFT JOIN projection_projects AS projects
-          ON projects.project_id = threads.project_id
-        WHERE threads.deleted_at IS NULL
-          AND (
-            INSTR(LOWER(threads.title), LOWER(?)) > 0
-            OR EXISTS (
-              SELECT 1
-              FROM projection_thread_messages AS messages
-              WHERE messages.thread_id = threads.thread_id
-                AND INSTR(LOWER(messages.text), LOWER(?)) > 0
-            )
-          )
-        ORDER BY
-          CASE WHEN INSTR(LOWER(threads.title), LOWER(?)) > 0 THEN 0 ELSE 1 END,
-          threads.updated_at DESC,
-          threads.thread_id DESC
-        LIMIT ?
-      `)
-      .all(query, query, query, query, query, query, query, limit);
-  } finally {
-    db.close();
-  }
 }
 
 function formatMatchExcerpt(text, query, maxLength = 180) {

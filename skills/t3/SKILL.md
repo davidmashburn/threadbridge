@@ -29,17 +29,31 @@ Use this skill when the user asks to:
 
 ## Command Mapping
 
-For agent-driven reads, append `--json`. Use `search` to resolve an exact ID and `show <ID> --json` to inspect canonical IR before proposing a write. Parse the JSON envelope instead of human-readable output.
+### T3 Code (MCP): read live threads
+
+When the `t3-code` MCP server is available (T3 Code, Cursor harness with T3 orchestration), use it for **read-only** access to threads the user sees in the app. Do not start with `threadbridge t3 show` for “continue from thread \<id\>” or handoff prompts.
+
+- Find threads: `t3_thread_search` with a query (prefer over `last`).
+- Read a thread: `t3_thread_read` with `threadId`, paginate with `afterPosition` / `nextPosition`, and recover long text with `itemId` + `textOffset` when `textTruncated` is true.
+- Mention another thread to the user: `[title](t3-thread://v1/<threadId>)` using the exact `threadId` from the tool.
+
+`threadbridge t3 list|search|show` reads local SQLite (`--db-path`, default `~/.t3/userdata/statev2.sqlite` when present, else `state.sqlite`). T3 Code Alpha uses `orchestration_v2_projection_*`; legacy DBs use `projection_*`. MCP `t3_thread_read` is still fine for in-app handoffs; use threadbridge for IR export and cross-harness work.
+
+Use the CLI below when you need **canonical Threadbridge IR**, **cross-env copy**, or **export/import to another harness** — not for ordinary “load context from this T3 thread” inside T3 Code.
+
+### threadbridge CLI (SQLite + writes)
+
+For agent-driven CLI reads (Codex-only agents, scripts, or IR export), append `--json`. Use `search` to resolve an exact ID and `show <ID> --json` to inspect canonical IR before proposing a write. Parse the JSON envelope instead of human-readable output.
 
 Prefer `search` over `last`. `last` resolves to whichever thread was touched most recently,
 which is frequently not the one the user means. T3 search also matches message bodies.
 
 - Find a thread by title, prompt, or message text:
-  - `threadbridge t3 search "<QUERY>" --db-path ~/.t3/userdata/state.sqlite --json`
+  - `threadbridge t3 search "<QUERY>" --db-path ~/.t3/userdata/statev2.sqlite --json`
 - List threads:
-  - `threadbridge t3 list --db-path ~/.t3/userdata/state.sqlite --limit <N>`
+  - `threadbridge t3 list --db-path ~/.t3/userdata/statev2.sqlite --limit <N>`
 - Inspect a thread as canonical IR without writing anything:
-  - `threadbridge t3 show <THREAD|last> --db-path ~/.t3/userdata/state.sqlite --json`
+  - `threadbridge t3 show <THREAD|last> --db-path ~/.t3/userdata/statev2.sqlite --json`
 - Cross-env copy:
   - `threadbridge t3 copy <THREAD|last> --source-db-path ~/.t3/dev/state.sqlite --db-path ~/.t3/userdata/state.sqlite --busy-timeout-ms 5000 --lock-retries 20 --retry-delay-ms 500`
 - Import from Codex:

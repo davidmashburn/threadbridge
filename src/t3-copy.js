@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { DatabaseSync } = require("node:sqlite");
+const { listThreadIndexRows, resolveThreadTargetFromIndex } = require("./adapters/t3/storage");
 
 const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 const DEFAULT_LOCK_RETRIES = 20;
@@ -89,45 +90,11 @@ function withLockRetries(fn, { retries, retryDelayMs }) {
 }
 
 function resolveThreadTarget({ sourceDbPath, target }) {
-  const db = new DatabaseSync(sourceDbPath);
+  const rows = listThreadIndexRows(sourceDbPath);
   try {
-    const rows = db
-      .prepare(`
-        SELECT
-          thread_id AS threadId,
-          title AS title,
-          created_at AS createdAt
-        FROM projection_threads
-        WHERE deleted_at IS NULL
-        ORDER BY created_at DESC, thread_id DESC
-      `)
-      .all();
-    if (rows.length === 0) {
-      fail(`No threads found in source DB: ${sourceDbPath}`);
-    }
-
-    if (!target || target === "last") {
-      return rows[0].threadId;
-    }
-
-    const exact = rows.find((row) => row.threadId === target);
-    if (exact) {
-      return exact.threadId;
-    }
-
-    const needle = String(target).toLowerCase();
-    const partial = rows.filter(
-      (row) => row.threadId.includes(target) || row.title.toLowerCase().includes(needle),
-    );
-    if (partial.length === 1) {
-      return partial[0].threadId;
-    }
-    if (partial.length > 1) {
-      fail(`Thread target is ambiguous: ${target}`);
-    }
-    fail(`Thread not found: ${target}`);
-  } finally {
-    db.close();
+    return resolveThreadTargetFromIndex({ rows, target, sourceDbPath });
+  } catch (error) {
+    fail(error.message);
   }
 }
 
