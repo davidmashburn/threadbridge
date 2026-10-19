@@ -282,6 +282,44 @@ function makeFixtureDb(additional = []) {
   };
 }
 
+test("list and search use the selected database's environment identity", () => {
+  const first = makeFixtureDb();
+  const second = makeFixtureDb();
+  try {
+    fs.writeFileSync(path.join(path.dirname(first.dbPath), "environment-id"), "env:first\n");
+    fs.writeFileSync(path.join(path.dirname(second.dbPath), "environment-id"), "env:second\n");
+    for (const [fixture, expected] of [[first, "env:first"], [second, "env:second"]]) {
+      const listed = listT3Threads({ dbPath: fixture.dbPath });
+      const searched = searchT3Threads({ dbPath: fixture.dbPath, query: "ANCESTOR included" });
+      assert.ok(listed.length > 0);
+      assert.ok(searched.length > 0);
+      assert.ok([...listed, ...searched].every((row) => row.environmentId === expected));
+    }
+  } finally {
+    first.cleanup();
+    second.cleanup();
+  }
+});
+
+test("missing or empty environment identity does not prevent list and search", () => {
+  const fixture = makeFixtureDb();
+  try {
+    for (const content of [null, " \n"]) {
+      if (content !== null) {
+        fs.writeFileSync(path.join(path.dirname(fixture.dbPath), "environment-id"), content);
+      }
+      const rows = [
+        ...listT3Threads({ dbPath: fixture.dbPath }),
+        ...searchT3Threads({ dbPath: fixture.dbPath, query: "ANCESTOR included" }),
+      ];
+      assert.ok(rows.length > 0);
+      assert.ok(rows.every((row) => row.environmentId === null));
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("reads stock v2 visibility, project workspace, plans, and inherited search", () => {
   const visiblePlan = projection({
     id: "thread:visible-plan",

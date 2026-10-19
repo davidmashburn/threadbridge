@@ -1,3 +1,5 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const { inspectT3Storage, validateV2Projection } = require("./profile");
 const {
   hasPendingV1TranscriptFromDb,
@@ -16,6 +18,15 @@ const {
 function collectWarnings(target, warnings) {
   if (Array.isArray(target) && warnings.length > 0) {
     target.push(...warnings);
+  }
+}
+
+function readEnvironmentId(dbPath) {
+  try {
+    return fs.readFileSync(path.join(path.dirname(dbPath), "environment-id"), "utf8").trim() || null;
+  } catch {
+    // Exported databases and older installs may have no environment identity.
+    return null;
   }
 }
 
@@ -72,6 +83,7 @@ function readV1ProjectDetail(db, threadId) {
  * pass a mutable `warnings` array; the returned rows stay CLI-compatible.
  */
 function listT3Threads({ dbPath, limit, warnings: warningCollector = null }) {
+  const environmentId = readEnvironmentId(dbPath);
   return withReadTransaction(dbPath, (db) => {
     const storage = inspectT3Storage(db, { write: false });
     collectWarnings(warningCollector, storage.warnings || []);
@@ -89,6 +101,7 @@ function listT3Threads({ dbPath, limit, warnings: warningCollector = null }) {
           : readV1ProjectDetail(db, row.threadId);
       return {
         threadId: row.threadId,
+        environmentId,
         title: row.title,
         createdAt: row.createdAt,
         projectTitle: detail?.projectTitle || null,
@@ -304,6 +317,7 @@ function mergeSearchResults(v1Rows, v2Rows, limit) {
  * verification, pending legacy fallback, and v2 visibility traversal.
  */
 function searchT3Threads({ dbPath, limit, query, warnings: warningCollector = null }) {
+  const environmentId = readEnvironmentId(dbPath);
   return withReadTransaction(dbPath, (db) => {
     const storage = inspectT3Storage(db, { write: false });
     collectWarnings(warningCollector, storage.warnings || []);
@@ -347,7 +361,7 @@ function searchT3Threads({ dbPath, limit, query, warnings: warningCollector = nu
       rows: activeV2Rows.filter((row) => !pendingV2Ids.has(row.threadId)),
       warningCollector,
     });
-    return mergeSearchResults(v1Rows, v2Rows, limit);
+    return mergeSearchResults(v1Rows, v2Rows, limit).map((row) => ({ ...row, environmentId }));
   });
 }
 
